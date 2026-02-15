@@ -14,7 +14,7 @@ export default function MainLayout({
     <div className="flex min-h-svh flex-col">
       <PageLoader />
       <Header />
-      <main className="flex-1 pb-20">{children}</main>
+      <main className="flex-1 w-full px-4 pb-20">{children}</main>
       <div className="px-4 pb-24 space-y-2 text-center text-sm text-muted-foreground">
         <a className="underline underline-offset-4" href={`mailto:${supportEmail}`}>
           Contacter le service client
