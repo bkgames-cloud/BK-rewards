@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server"
 import { DashboardClient } from "@/components/dashboard-client"
 import type { Profile, Season } from "@/lib/types"
 
+export const dynamic = "force-dynamic"
+
 export default async function HomePage() {
   let user = null
   let profile: Profile | null = null
