@@ -154,7 +154,9 @@ export function CadeauCard({
           <Button variant="secondary" className="w-full max-w-xs mx-auto text-sm sm:text-base" asChild>
             <a href="/auth/login">
               <Lock className="mr-2 h-4 w-4" />
-              <span className="whitespace-normal">Connectez-vous pour participer</span>
+              <span className="whitespace-normal text-center leading-snug">
+                Connectez-vous pour participer
+              </span>
             </a>
           </Button>
         ) : (

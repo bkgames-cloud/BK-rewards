@@ -130,7 +130,6 @@ export default function PremiumPage() {
         return
       }
 
-      // Mettre à jour is_vip à true dans la base de données
       if (!user?.id) {
         toast({
           title: "Erreur",
@@ -139,30 +138,26 @@ export default function PremiumPage() {
         })
         return
       }
-      
-      const { error } = await supabase
-        .from("profiles")
-        .update({ is_vip: true })
-        .eq("id", user.id)
 
-      if (error) {
-        console.error("Error subscribing:", error)
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: type }),
+      })
+
+      if (!response.ok) {
         toast({
           title: "Erreur",
-          description: "Impossible de finaliser l'abonnement. Veuillez réessayer.",
+          description: "Impossible de créer la session de paiement.",
           variant: "destructive",
         })
         return
       }
 
-      // Mettre à jour l'état local immédiatement (sans recharger la page)
-      setIsVip(true)
-      setIsAuthenticated(true)
-      
-      toast({
-        title: "Félicitations !",
-        description: "Vous êtes maintenant VIP ! Profitez de tous les avantages premium.",
-      })
+      const { url } = await response.json()
+      if (url) {
+        window.location.href = url
+      }
     } catch (error) {
       console.error("Unexpected error:", error)
       toast({
