@@ -5,9 +5,9 @@ export async function POST(req: Request) {
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY
   const weeklyPriceId = process.env.STRIPE_PRICE_ID_HEBDO
   const monthlyPriceId = process.env.STRIPE_PRICE_ID_MENSUEL
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
 
-  if (!stripeSecretKey || !weeklyPriceId || !monthlyPriceId) {
+  if (!stripeSecretKey || !weeklyPriceId || !monthlyPriceId || !siteUrl) {
     return new Response("Stripe env vars missing", { status: 500 })
   }
 

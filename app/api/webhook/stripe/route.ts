@@ -32,21 +32,42 @@ export async function POST(req: Request) {
     const session = event.data.object as Stripe.Checkout.Session
     const supabaseUserId = session.metadata?.supabase_user_id
     const priceId = session.metadata?.price_id
+    console.log("[stripe-webhook] checkout.session.completed", {
+      supabaseUserId,
+      priceId,
+      sessionId: session.id,
+    })
 
     if (supabaseUserId && priceId) {
-      const supabase = createClient(supabaseUrl, serviceRoleKey)
-      const now = new Date()
+      const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
       const durationDays =
         priceId === weeklyPriceId ? 7 : priceId === monthlyPriceId ? 30 : 0
-      const vipUntil = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000)
+      const durationMs = durationDays * 24 * 60 * 60 * 1000
+      const vipUntil = new Date(Date.now() + durationMs).toISOString()
 
-      await supabase
+      console.log("Update pour user:", supabaseUserId)
+
+      const { error } = await supabaseAdmin
         .from("profiles")
         .update({
           is_vip: true,
-          vip_expires_at: vipUntil.toISOString(),
+          vip_until: vipUntil,
         })
         .eq("id", supabaseUserId)
+
+      if (error) {
+        console.error(error)
+      } else {
+        console.log("[stripe-webhook] Profile updated", {
+          supabaseUserId,
+          vip_until: vipUntil,
+        })
+      }
+    } else {
+      console.warn("[stripe-webhook] Missing metadata", {
+        supabaseUserId,
+        priceId,
+      })
     }
   }
 
