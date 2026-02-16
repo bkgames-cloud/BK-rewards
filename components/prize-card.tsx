@@ -90,9 +90,9 @@ export function CadeauCard({
       )}
 
       <CardContent className="p-4">
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         {/* Prize Image */}
-        <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-secondary group">
+        <div className="relative aspect-square w-full shrink-0 overflow-hidden rounded-xl bg-secondary group sm:w-24">
           <span className="absolute left-2 top-2 z-10 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
             {rarityBadge}
           </span>
@@ -117,9 +117,11 @@ export function CadeauCard({
         </div>
 
         {/* Prize Info */}
-        <div className="flex flex-1 flex-col justify-between">
+        <div className="flex min-w-0 flex-1 flex-col justify-between">
           <div>
-            <h3 className="font-semibold text-foreground">{cadeau.nom}</h3>
+            <h3 className="font-semibold text-foreground break-words whitespace-normal">
+              {cadeau.nom}
+            </h3>
             <p className="text-sm text-muted-foreground">
               {ticketsOwned} / {ticketsTotal} tickets
             </p>
