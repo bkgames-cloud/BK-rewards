@@ -14,6 +14,7 @@ import Link from "next/link"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
 import type { Profile } from "@/lib/types"
 import { ReferralQR } from "@/components/referral-qr"
+import { Confetti } from "@/components/confetti"
 
 interface ProfileClientProps {
   user: SupabaseUser
@@ -43,8 +44,15 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const router = useRouter()
-  const points = profile?.points ?? 0
+  const [localPoints, setLocalPoints] = useState(profile?.points ?? 0)
+  const [isClaimingBonus, setIsClaimingBonus] = useState(false)
+  const [claimMessage, setClaimMessage] = useState<string | null>(null)
+  const [showConfetti, setShowConfetti] = useState(false)
+  const points = localPoints
   const vipUntil = profile?.vip_until ? new Date(profile.vip_until) : null
+  const lastClaimDate = profile?.last_claim_date ? new Date(profile.last_claim_date) : null
+  const claimedToday =
+    lastClaimDate && lastClaimDate.toDateString() === new Date().toDateString()
 
   useEffect(() => {
     const fetchTicketsSummary = async () => {
@@ -206,6 +214,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      {showConfetti && <Confetti duration={2000} particleCount={60} />}
       <h2 className="text-xl font-semibold text-foreground">Mon Profil</h2>
 
       <Card className="border border-border/50 bg-gradient-to-br from-blue-600/40 via-indigo-600/30 to-purple-600/40 backdrop-blur-sm shadow-lg">
@@ -404,6 +413,41 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
                   {vipUntil ? vipUntil.toLocaleDateString("fr-FR") : "Non renseignée"}
                 </span>
               </p>
+              <Button
+                onClick={async () => {
+                  setIsClaimingBonus(true)
+                  setClaimMessage(null)
+                  try {
+                    const response = await fetch("/api/claim-daily", { method: "POST" })
+                    if (!response.ok) {
+                      setClaimMessage(
+                        response.status === 409
+                          ? "Déjà réclamé aujourd'hui."
+                          : "Impossible de réclamer le bonus.",
+                      )
+                      return
+                    }
+                    const data = await response.json()
+                    setLocalPoints(data.points)
+                    setClaimMessage("Bonus VIP crédité !")
+                    setShowConfetti(true)
+                    setTimeout(() => setShowConfetti(false), 2000)
+                  } finally {
+                    setIsClaimingBonus(false)
+                  }
+                }}
+                disabled={claimedToday || isClaimingBonus}
+                className="w-full bg-gradient-to-r from-accent to-accent/80 text-accent-foreground"
+              >
+                {claimedToday
+                  ? "Déjà réclamé"
+                  : isClaimingBonus
+                    ? "Réclamation..."
+                    : "Réclamer mon bonus VIP"}
+              </Button>
+              {claimMessage && (
+                <p className="text-xs text-muted-foreground">{claimMessage}</p>
+              )}
               <Button
                 onClick={async () => {
                   const response = await fetch("/api/portal", { method: "POST" })

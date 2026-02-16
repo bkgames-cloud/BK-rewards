@@ -23,6 +23,7 @@ export interface Profile {
   is_admin: boolean
   is_vip?: boolean
   last_bonus_claim?: string | null
+  last_claim_date?: string | null
   vip_expires_at?: string | null
   adresse: string | null
   code_postal: string | null
