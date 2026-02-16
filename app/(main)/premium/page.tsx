@@ -16,6 +16,7 @@ import { Confetti } from "@/components/confetti"
 
 export default function PremiumPage() {
   const [isVip, setIsVip] = useState(false)
+  const [vipUntil, setVipUntil] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [claiming, setClaiming] = useState(false)
@@ -63,7 +64,7 @@ export default function PremiumPage() {
         
         const { data: profile, error } = await supabase
           .from("profiles")
-          .select("is_vip, last_bonus_claim, vip_expires_at")
+          .select("is_vip, last_bonus_claim, vip_until")
           .eq("id", user.id)
           .maybeSingle() // Utiliser maybeSingle pour éviter les erreurs si le profil n'existe pas
 
@@ -77,6 +78,7 @@ export default function PremiumPage() {
         // Si profile existe, utiliser ses données, sinon is_vip reste false
         if (profile) {
           setIsVip(profile.is_vip || false)
+          setVipUntil(profile.vip_until || null)
           
           if (profile.last_bonus_claim) {
             const lastClaimDate = new Date(profile.last_bonus_claim)
@@ -236,6 +238,30 @@ export default function PremiumPage() {
     }
   }
 
+  const handleOpenPortal = async () => {
+    try {
+      const response = await fetch("/api/portal", { method: "POST" })
+      if (!response.ok) {
+        toast({
+          title: "Erreur",
+          description: "Impossible d'ouvrir le portail Stripe.",
+          variant: "destructive",
+        })
+        return
+      }
+      const { url } = await response.json()
+      if (url) {
+        window.location.href = url
+      }
+    } catch {
+      toast({
+        title: "Erreur",
+        description: "Une erreur est survenue.",
+        variant: "destructive",
+      })
+    }
+  }
+
   const handleClaimBonus = async () => {
     if (!isVip) {
       // Rediriger vers l'abonnement (scroll vers les abonnements)
@@ -377,7 +403,14 @@ export default function PremiumPage() {
                   Profitez de tous les avantages premium
                 </CardDescription>
               </div>
-              <Badge className="bg-yellow-500 text-yellow-950">VIP</Badge>
+              <div className="flex flex-col items-end gap-1">
+                <Badge className="bg-yellow-500 text-yellow-950">VIP</Badge>
+                {vipUntil && (
+                  <span className="text-xs text-muted-foreground">
+                    Statut : VIP Actif • {new Date(vipUntil).toLocaleDateString("fr-FR")}
+                  </span>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -433,12 +466,12 @@ export default function PremiumPage() {
             {/* Bouton Annuler l'abonnement - uniquement si VIP */}
             {isVip && (
               <Button
-                onClick={handleCancelSubscription}
+                onClick={handleOpenPortal}
                 variant="outline"
-                className="w-full border-red-500/50 text-red-500 hover:bg-red-500/10 hover:text-red-600"
+                className="w-full border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10 hover:text-yellow-600"
               >
-                <X className="mr-2 h-4 w-4" />
-                Annuler l'abonnement
+                <Crown className="mr-2 h-4 w-4" />
+                Gérer mon abonnement
               </Button>
             )}
           </CardContent>

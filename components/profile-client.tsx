@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Info, LogOut, Save, Crown, Users, Ticket, MapPin } from "lucide-react"
+import { Info, LogOut, Save, Crown, Users, Ticket, MapPin, Star } from "lucide-react"
 import Link from "next/link"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
 import type { Profile } from "@/lib/types"
@@ -44,6 +44,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const [message, setMessage] = useState<string | null>(null)
   const router = useRouter()
   const points = profile?.points ?? 0
+  const vipUntil = profile?.vip_until ? new Date(profile.vip_until) : null
 
   useEffect(() => {
     const fetchTicketsSummary = async () => {
@@ -215,9 +216,17 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
             </div>
             <div className="flex-1">
               <CardTitle className="text-lg text-foreground">Membre BK Rewards</CardTitle>
-              <p className="text-sm text-foreground/80">
-                {firstName || lastName ? `${firstName} ${lastName}` : "Utilisateur"}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-foreground/80">
+                  {firstName || lastName ? `${firstName} ${lastName}` : "Utilisateur"}
+                </p>
+                {profile?.is_vip && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/20 px-2 py-0.5 text-[10px] font-semibold text-yellow-400">
+                    <Star className="h-3 w-3" />
+                    Membre VIP
+                  </span>
+                )}
+              </div>
             </div>
             <div className="text-right">
               <p className="text-xs text-foreground/80">Points</p>
@@ -385,12 +394,37 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
               ? "Vous êtes membre VIP ! Profitez de tous les avantages premium."
               : "Débloquez tous les avantages premium : Zéro Publicité, Badge VIP, et tickets gratuits quotidiens."}
           </p>
-          <Button asChild className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-yellow-950 hover:from-yellow-600 hover:to-yellow-700">
-            <Link href="/premium">
-              <Crown className="mr-2 h-4 w-4" />
-              {profile?.is_vip ? "Gérer mon abonnement" : "Découvrir le Pass Confort"}
-            </Link>
-          </Button>
+          {profile?.is_vip ? (
+            <div className="space-y-3 rounded-lg bg-secondary/40 p-3">
+              <p className="text-sm text-foreground">
+                Statut : <span className="font-semibold">VIP Actif</span>
+                {" • "}
+                Expiration :{" "}
+                <span className="font-semibold">
+                  {vipUntil ? vipUntil.toLocaleDateString("fr-FR") : "Non renseignée"}
+                </span>
+              </p>
+              <Button
+                onClick={async () => {
+                  const response = await fetch("/api/portal", { method: "POST" })
+                  if (!response.ok) return
+                  const { url } = await response.json()
+                  if (url) window.location.href = url
+                }}
+                className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-yellow-950 hover:from-yellow-600 hover:to-yellow-700"
+              >
+                <Crown className="mr-2 h-4 w-4" />
+                Gérer mon abonnement
+              </Button>
+            </div>
+          ) : (
+            <Button asChild className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-yellow-950 hover:from-yellow-600 hover:to-yellow-700">
+              <Link href="/premium">
+                <Crown className="mr-2 h-4 w-4" />
+                Découvrir le Pass Confort
+              </Link>
+            </Button>
+          )}
         </CardContent>
       </Card>
 
