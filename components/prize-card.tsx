@@ -151,10 +151,10 @@ export function CadeauCard({
             Tirage terminé
           </Button>
         ) : !isAuthenticated ? (
-          <Button variant="secondary" className="w-full" asChild>
+          <Button variant="secondary" className="w-full max-w-xs mx-auto text-sm sm:text-base" asChild>
             <a href="/auth/login">
               <Lock className="mr-2 h-4 w-4" />
-              Connectez-vous pour participer
+              <span className="whitespace-normal">Connectez-vous pour participer</span>
             </a>
           </Button>
         ) : (
