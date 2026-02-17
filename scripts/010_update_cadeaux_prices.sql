@@ -29,7 +29,7 @@ SET nom = 'Carte Amazon 20€',
 WHERE nom ILIKE 'Carte Cadeau 20€' OR nom ILIKE '%amazon 20%';
 
 UPDATE cadeaux
-SET nom = 'Carte Netflix 10€',
+SET nom = 'Carte Google Play 10€',
     points_par_ticket = 10,
     image_url = 'https://images.unsplash.com/photo-1625225230517-7426c1be7505?auto=format&fit=crop&w=900&q=80'
 WHERE nom ILIKE 'Carte Cadeau 10€' OR nom ILIKE '%google 10%' OR nom ILIKE '%netflix%';

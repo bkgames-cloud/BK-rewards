@@ -55,7 +55,7 @@ export function CadeauCard({
     if (lower.includes("iphone") || lower.includes("playstation") || lower.includes("ps5") || lower.includes("samsung")) {
       return "Premium"
     }
-    if (lower.includes("amazon") || lower.includes("psn") || lower.includes("netflix")) return "Flash"
+  if (lower.includes("amazon") || lower.includes("psn") || lower.includes("google play")) return "Flash"
     return "Populaire"
   }
   const rarityBadge = getRarityBadge(cadeau.nom)

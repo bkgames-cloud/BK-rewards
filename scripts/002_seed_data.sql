@@ -25,6 +25,6 @@ INSERT INTO cadeaux (nom, image_url, points_par_ticket, objectif_tickets, ticket
 ('AirPods Pro', 'https://images.unsplash.com/photo-1585386959984-a41552231692?auto=format&fit=crop&w=800&q=80', 30, 400, 0, 'en_cours'),
 ('Nintendo Switch', 'https://images.unsplash.com/photo-1523861751938-12159a93c9d2?auto=format&fit=crop&w=900&q=80', 30, 400, 0, 'en_cours'),
 ('Carte Amazon 20€', 'https://images.unsplash.com/photo-1601597111158-2fceff292cdc?auto=format&fit=crop&w=900&q=80', 20, 80, 0, 'en_cours'),
-('Carte Netflix 10€', 'https://images.unsplash.com/photo-1625225230517-7426c1be7505?auto=format&fit=crop&w=900&q=80', 10, 50, 0, 'en_cours'),
+('Carte Google Play 10€', 'https://images.unsplash.com/photo-1625225230517-7426c1be7505?auto=format&fit=crop&w=900&q=80', 10, 50, 0, 'en_cours'),
 ('Carte PSN 5€', 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=900&q=80', 5, 25, 0, 'en_cours')
 ON CONFLICT DO NOTHING;

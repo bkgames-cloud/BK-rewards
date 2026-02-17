@@ -15,6 +15,14 @@ export interface Ticket {
   created_at: string
 }
 
+export interface RewardPool {
+  id: string
+  name: string
+  target_videos: number
+  current_videos: number
+  image_url?: string | null
+}
+
 export interface Profile {
   id: string
   first_name: string | null
