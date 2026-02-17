@@ -30,6 +30,9 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const [ticketsSummary, setTicketsSummary] = useState<
     { cadeauId: string; nom: string; count: number }[]
   >([])
+  const [referralCode, setReferralCode] = useState(profile?.referral_code || "")
+  const [isGeneratingReferral, setIsGeneratingReferral] = useState(false)
+  const [referredCount, setReferredCount] = useState(0)
   const [totalViews, setTotalViews] = useState(0)
   const [gradeSettings, setGradeSettings] = useState<{
     grade_debutant_label: string
@@ -90,6 +93,53 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     }
 
     fetchTicketsSummary()
+  }, [user?.id])
+
+  const update_referral_code = async (newCode: string) => {
+    if (!user?.id) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from("profiles")
+      .update({ referral_code: newCode })
+      .eq("id", user.id)
+    if (!error) {
+      setReferralCode(newCode)
+    }
+  }
+
+  const generateReferralCode = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    let code = ""
+    for (let i = 0; i < 6; i += 1) {
+      code += chars[Math.floor(Math.random() * chars.length)]
+    }
+    return code
+  }
+
+  useEffect(() => {
+    const ensureReferralCode = async () => {
+      if (!user?.id) return
+      if (isGeneratingReferral) return
+      if (referralCode && referralCode.trim() !== "") return
+      setIsGeneratingReferral(true)
+      const newCode = generateReferralCode()
+      await update_referral_code(newCode)
+      setIsGeneratingReferral(false)
+    }
+    ensureReferralCode()
+  }, [user?.id, referralCode, isGeneratingReferral])
+
+  useEffect(() => {
+    const fetchReferredCount = async () => {
+      if (!user?.id) return
+      const supabase = createClient()
+      const { count } = await supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("referred_by", user.id)
+      setReferredCount(count || 0)
+    }
+    fetchReferredCount()
   }, [user?.id])
 
   useEffect(() => {
@@ -481,7 +531,10 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ReferralQR referralCode={profile?.referral_code} />
+          <ReferralQR
+            referralCode={referralCode || profile?.referral_code}
+            referredCount={referredCount}
+          />
         </CardContent>
       </Card>
 

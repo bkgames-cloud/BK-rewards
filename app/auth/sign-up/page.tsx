@@ -81,8 +81,19 @@ function SignUpContent() {
 
       if (error) throw error
 
-      // La récompense du parrain est gérée automatiquement par le trigger SQL
-      // qui appelle reward_referrer après la création du profil
+      // Bonus de parrainage pour le filleul (5 points)
+      if (referrerId && signUpData?.user?.id) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("points")
+          .eq("id", signUpData.user.id)
+          .maybeSingle()
+        const newPoints = (profileData?.points || 0) + 5
+        await supabase
+          .from("profiles")
+          .update({ points: newPoints })
+          .eq("id", signUpData.user.id)
+      }
 
       router.push("/auth/sign-up-success")
     } catch (error: unknown) {

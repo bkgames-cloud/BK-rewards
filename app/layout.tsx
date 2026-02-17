@@ -13,14 +13,14 @@ export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
-  title: "BK'reward - Gagnez des lots gratuitement",
+  title: "BKG Rewards - Gagnez des récompenses",
   description: "Rejoignez BK'reward et tentez de gagner des cadeaux gratuitement ! Regardez des publicités et gagnez des iPhone, consoles et cartes cadeaux.",
   generator: "v0.app",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "BK'reward",
+    title: "BKG Rewards",
   },
   icons: {
     icon: [
@@ -40,9 +40,9 @@ export const metadata: Metadata = {
     apple: "/apple-icon.png",
   },
   openGraph: {
-    title: "BK'reward - Gagnez des lots gratuitement",
+    title: "BKG Rewards - Gagnez des récompenses",
     description: "Rejoignez BK'reward et tentez de gagner des cadeaux gratuitement ! Regardez des publicités et gagnez des iPhone, consoles et cartes cadeaux.",
-    siteName: "BK'reward",
+    siteName: "BKG Rewards",
     images: [
       {
         url: "/og-image.png", // Vous devrez créer cette image
@@ -56,7 +56,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "BK'reward - Gagnez des lots gratuitement",
+    title: "BKG Rewards - Gagnez des récompenses",
     description: "Rejoignez BK'reward et tentez de gagner des cadeaux gratuitement !",
     images: ["/og-image.png"],
   },

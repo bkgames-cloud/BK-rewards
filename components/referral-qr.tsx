@@ -9,9 +9,10 @@ import { useToast } from "@/hooks/use-toast"
 
 interface ReferralQRProps {
   referralCode: string | null | undefined
+  referredCount?: number
 }
 
-export function ReferralQR({ referralCode }: ReferralQRProps) {
+export function ReferralQR({ referralCode, referredCount = 0 }: ReferralQRProps) {
   const [copied, setCopied] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -20,20 +21,8 @@ export function ReferralQR({ referralCode }: ReferralQRProps) {
   // Générer le lien de parrainage (en développement, utiliser l'IP locale ou localhost)
   const getReferralLink = () => {
     if (!referralCode) return ""
-    
-    if (typeof window === "undefined") return ""
-    
-    const origin = window.location.origin
-    const isLocalhost = origin.includes("localhost") || origin.includes("127.0.0.1")
-    
-    // En développement, utiliser localhost ou l'IP locale
-    if (isLocalhost) {
-      // Option 1: Utiliser localhost (fonctionne sur le même appareil)
-      return `${origin}/auth/sign-up?ref=${referralCode}`
-    }
-    
-    // En production, utiliser l'origin normal
-    return `${origin}/auth/sign-up?ref=${referralCode}`
+
+    return `https://bkg-rewards.com/signup?ref=${referralCode}`
   }
 
   const referralLink = getReferralLink()
@@ -86,6 +75,9 @@ export function ReferralQR({ referralCode }: ReferralQRProps) {
       <p className="text-sm text-muted-foreground">
         Rejoins-moi sur BK&apos;reward et tente de gagner des cadeaux ! Voici mon code : <span className="font-bold text-foreground">{referralCode}</span>
       </p>
+      <p className="text-xs text-muted-foreground">
+        Parrainages confirmés : <span className="font-semibold text-foreground">{referredCount}</span>
+      </p>
 
       {/* Code de parrainage */}
       <div className="space-y-2">
@@ -101,7 +93,6 @@ export function ReferralQR({ referralCode }: ReferralQRProps) {
           />
           <Button
             variant="outline"
-            size="icon"
             onClick={() => {
               navigator.clipboard.writeText(referralCode)
               toast({
@@ -109,8 +100,10 @@ export function ReferralQR({ referralCode }: ReferralQRProps) {
                 description: "Le code de parrainage a été copié",
               })
             }}
+            className="shrink-0"
           >
-            <Copy className="h-4 w-4" />
+            <Copy className="mr-2 h-4 w-4" />
+            Copier mon code
           </Button>
         </div>
       </div>
