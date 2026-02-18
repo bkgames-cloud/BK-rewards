@@ -18,11 +18,25 @@ CREATE TABLE IF NOT EXISTS rewards_pool_views (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Tickets cumulés par utilisateur et par lot
+CREATE TABLE IF NOT EXISTS rewards_pool_tickets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pool_id UUID NOT NULL REFERENCES rewards_pools(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  views_count INTEGER NOT NULL DEFAULT 0,
+  tickets_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, pool_id)
+);
+
 CREATE INDEX IF NOT EXISTS rewards_pool_views_user_idx ON rewards_pool_views (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS rewards_pool_views_pool_idx ON rewards_pool_views (pool_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS rewards_pool_tickets_user_idx ON rewards_pool_tickets (user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS rewards_pool_tickets_pool_idx ON rewards_pool_tickets (pool_id, updated_at DESC);
 
 ALTER TABLE rewards_pools ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rewards_pool_views ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rewards_pool_tickets ENABLE ROW LEVEL SECURITY;
 
 -- Lecture publique des cagnottes
 DO $$
@@ -49,6 +63,12 @@ BEGIN
   ) THEN
     CREATE POLICY "Users can insert own pool views" ON rewards_pool_views
       FOR INSERT WITH CHECK (auth.uid() = user_id);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'rewards_pool_tickets' AND policyname = 'Users can read own pool tickets'
+  ) THEN
+    CREATE POLICY "Users can read own pool tickets" ON rewards_pool_tickets
+      FOR SELECT USING (auth.uid() = user_id);
   END IF;
 END $$;
 

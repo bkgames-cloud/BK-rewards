@@ -11,15 +11,15 @@ import { useToast } from "@/hooks/use-toast"
 import { getPrizeFallbackImage } from "@/lib/prizes"
 import type { RewardPool } from "@/lib/types"
 
-interface UserViewsMap {
-  [poolId: string]: number
+interface UserStatsMap {
+  [poolId: string]: { views: number; tickets: number }
 }
 
 export function ConcoursClient() {
   const [pools, setPools] = useState<RewardPool[]>([])
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
-  const [userViews, setUserViews] = useState<UserViewsMap>({})
+  const [userStats, setUserStats] = useState<UserStatsMap>({})
   const [isOverlayOpen, setIsOverlayOpen] = useState(false)
   const [selectedPool, setSelectedPool] = useState<RewardPool | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -49,22 +49,25 @@ export function ConcoursClient() {
       setUserId(user?.id || null)
 
       if (!user?.id) {
-        setUserViews({})
+        setUserStats({})
         return
       }
 
-      const { data: views } = await supabase
-        .from("rewards_pool_views")
-        .select("pool_id")
+      const { data: stats } = await supabase
+        .from("rewards_pool_tickets")
+        .select("pool_id, views_count, tickets_count")
         .eq("user_id", user.id)
 
-      const counts: UserViewsMap = {}
-      for (const row of views || []) {
+      const map: UserStatsMap = {}
+      for (const row of stats || []) {
         const poolId = (row as { pool_id?: string }).pool_id
         if (!poolId) continue
-        counts[poolId] = (counts[poolId] || 0) + 1
+        map[poolId] = {
+          views: (row as { views_count?: number }).views_count || 0,
+          tickets: (row as { tickets_count?: number }).tickets_count || 0,
+        }
       }
-      setUserViews(counts)
+      setUserStats(map)
     }
 
     fetchUser()
@@ -104,9 +107,12 @@ export function ConcoursClient() {
         ),
       )
 
-      setUserViews((prev) => ({
+      setUserStats((prev) => ({
         ...prev,
-        [selectedPool.id]: (prev[selectedPool.id] || 0) + 1,
+        [selectedPool.id]: {
+          views: payload.user_views ?? (prev[selectedPool.id]?.views || 0) + 1,
+          tickets: payload.user_tickets ?? prev[selectedPool.id]?.tickets || 0,
+        },
       }))
 
       toast({
@@ -147,8 +153,8 @@ export function ConcoursClient() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {poolsWithProgress.map((pool) => {
-          const views = userViews[pool.id] || 0
-          const tickets = Math.floor(views / 10)
+          const views = userStats[pool.id]?.views || 0
+          const tickets = userStats[pool.id]?.tickets || 0
           const imageSrc =
             pool.image_url && pool.image_url.trim() !== ""
               ? pool.image_url

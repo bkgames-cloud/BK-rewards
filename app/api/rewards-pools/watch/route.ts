@@ -79,6 +79,19 @@ export async function POST(req: Request) {
 
   const userTickets = Math.floor((userViews || 0) / 10)
 
+  await supabaseAdmin
+    .from("rewards_pool_tickets")
+    .upsert(
+      {
+        pool_id: poolId,
+        user_id: user.id,
+        views_count: userViews || 0,
+        tickets_count: userTickets,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,pool_id" },
+    )
+
   return NextResponse.json({
     success: true,
     current_videos: updatedCurrent,

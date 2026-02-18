@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose, SheetTrigger 
 const navItems = [
   { href: "/", icon: Home, label: "Accueil" },
   { href: "/prizes", icon: Gift, label: "Cadeaux" },
+  { href: "/concours", icon: Trophy, label: "Concours" },
   { href: "/tickets", icon: Trophy, label: "Tickets" },
   { href: "/notifications", icon: Bell, label: "Alertes" },
   { href: "/gagnants", icon: Award, label: "Gagnants" },

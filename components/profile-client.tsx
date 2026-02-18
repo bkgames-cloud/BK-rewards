@@ -130,6 +130,12 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   }, [user?.id, referralCode, isGeneratingReferral])
 
   useEffect(() => {
+    if (profile?.referral_code && profile.referral_code.trim() !== "") {
+      setReferralCode(profile.referral_code)
+    }
+  }, [profile?.referral_code])
+
+  useEffect(() => {
     const fetchReferredCount = async () => {
       if (!user?.id) return
       const supabase = createClient()
