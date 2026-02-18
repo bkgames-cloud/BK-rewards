@@ -110,8 +110,8 @@ export function ConcoursClient() {
       setUserStats((prev) => ({
         ...prev,
         [selectedPool.id]: {
-          views: payload.user_views ?? (prev[selectedPool.id]?.views || 0) + 1,
-          tickets: payload.user_tickets ?? prev[selectedPool.id]?.tickets || 0,
+          views: payload.user_views ?? ((prev[selectedPool.id]?.views || 0) + 1),
+          tickets: payload.user_tickets ?? (prev[selectedPool.id]?.tickets || 0),
         },
       }))
 
