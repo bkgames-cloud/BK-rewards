@@ -31,6 +31,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     { cadeauId: string; nom: string; count: number }[]
   >([])
   const [referralCode, setReferralCode] = useState(profile?.referral_code || "")
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null)
   const [isGeneratingReferral, setIsGeneratingReferral] = useState(false)
   const [referredCount, setReferredCount] = useState(0)
   const [totalViews, setTotalViews] = useState(0)
@@ -96,12 +97,13 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   }, [user?.id])
 
   const update_referral_code = async (newCode: string) => {
-    if (!user?.id) return
+    const targetUserId = sessionUserId || user?.id
+    if (!targetUserId) return
     const supabase = createClient()
     const { error } = await supabase
       .from("profiles")
       .update({ referral_code: newCode })
-      .eq("id", user.id)
+      .eq("id", targetUserId)
     if (!error) {
       setReferralCode(newCode)
     }
@@ -109,7 +111,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
 
   const generateReferralCode = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    let code = ""
+    let code = "BKG-"
     for (let i = 0; i < 6; i += 1) {
       code += chars[Math.floor(Math.random() * chars.length)]
     }
@@ -117,8 +119,17 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   }
 
   useEffect(() => {
+    const fetchSessionUser = async () => {
+      const supabase = createClient()
+      const { data } = await supabase.auth.getUser()
+      setSessionUserId(data?.user?.id || null)
+    }
+    fetchSessionUser()
+  }, [])
+
+  useEffect(() => {
     const ensureReferralCode = async () => {
-      if (!user?.id) return
+      if (!sessionUserId && !user?.id) return
       if (isGeneratingReferral) return
       if (referralCode && referralCode.trim() !== "") return
       setIsGeneratingReferral(true)
@@ -127,7 +138,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       setIsGeneratingReferral(false)
     }
     ensureReferralCode()
-  }, [user?.id, referralCode, isGeneratingReferral])
+  }, [user?.id, sessionUserId, referralCode, isGeneratingReferral])
 
   useEffect(() => {
     if (profile?.referral_code && profile.referral_code.trim() !== "") {

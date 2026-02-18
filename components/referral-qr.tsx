@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import { createClient } from "@/lib/supabase/client"
 
 interface ReferralQRProps {
   referralCode: string | null | undefined
@@ -15,26 +16,83 @@ interface ReferralQRProps {
 export function ReferralQR({ referralCode, referredCount = 0 }: ReferralQRProps) {
   const [copied, setCopied] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [localReferralCode, setLocalReferralCode] = useState<string | null>(referralCode || null)
+  const [isGenerating, setIsGenerating] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { toast } = useToast()
 
+  useEffect(() => {
+    setLocalReferralCode(referralCode || null)
+  }, [referralCode])
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => {
+      setIsAuthenticated(Boolean(data?.user))
+    })
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(Boolean(session?.user))
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const generateReferralCode = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    let code = "BKG-"
+    for (let i = 0; i < 4; i += 1) {
+      code += chars[Math.floor(Math.random() * chars.length)]
+    }
+    return code
+  }
+
+  useEffect(() => {
+    const ensureReferralCode = async () => {
+      if (!isAuthenticated) return
+      if (isGenerating) return
+      if (localReferralCode && localReferralCode.trim() !== "") return
+
+      setIsGenerating(true)
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user?.id) {
+        setIsGenerating(false)
+        return
+      }
+
+      const newCode = generateReferralCode()
+      const { error } = await supabase
+        .from("profiles")
+        .update({ referral_code: newCode })
+        .eq("id", user.id)
+
+      if (!error) {
+        setLocalReferralCode(newCode)
+      }
+      setIsGenerating(false)
+    }
+    ensureReferralCode()
+  }, [isAuthenticated, isGenerating, localReferralCode])
+
   // Générer le lien de parrainage (en développement, utiliser l'IP locale ou localhost)
   const getReferralLink = () => {
-    if (!referralCode) return ""
+    if (!localReferralCode) return ""
 
-    return `https://bkg-rewards.com/signup?ref=${referralCode}`
+    return `https://bkg-rewards.com/signup?ref=${localReferralCode}`
   }
 
   const referralLink = getReferralLink()
 
   // Générer le QR code en utilisant une API externe (ou une bibliothèque)
   useEffect(() => {
-    if (!referralCode || !referralLink) return
+    if (!localReferralCode || !referralLink) return
 
     // Utiliser une API QR code gratuite (QR Server)
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(referralLink)}`
     setQrDataUrl(qrUrl)
-  }, [referralCode, referralLink])
+  }, [localReferralCode, referralLink])
 
   const handleCopy = async () => {
     if (!referralLink) return
@@ -57,10 +115,18 @@ export function ReferralQR({ referralCode, referredCount = 0 }: ReferralQRProps)
     }
   }
 
-  if (!referralCode) {
+  if (!localReferralCode && !isAuthenticated) {
     return (
       <div className="rounded-lg border border-border/50 bg-secondary/20 p-4 text-center">
         <p className="text-sm text-muted-foreground">Votre code de parrainage sera disponible après l'inscription</p>
+      </div>
+    )
+  }
+
+  if (!localReferralCode && isAuthenticated) {
+    return (
+      <div className="rounded-lg border border-border/50 bg-secondary/20 p-4 text-center">
+        <p className="text-sm text-muted-foreground">Génération de votre code de parrainage...</p>
       </div>
     )
   }
@@ -73,8 +139,12 @@ export function ReferralQR({ referralCode, referredCount = 0 }: ReferralQRProps)
       </div>
       
       <p className="text-sm text-muted-foreground">
-        Rejoins-moi sur BK&apos;reward et tente de gagner des cadeaux ! Voici mon code : <span className="font-bold text-foreground">{referralCode}</span>
+        Rejoins-moi sur BK&apos;reward et tente de gagner des cadeaux ! Voici mon code :{" "}
+        <span className="font-bold text-foreground">{localReferralCode}</span>
       </p>
+      <div className="rounded-xl border border-border/60 bg-secondary/30 p-4 text-center">
+        <span className="text-3xl font-bold tracking-widest text-foreground">{localReferralCode}</span>
+      </div>
       <p className="text-xs text-muted-foreground">
         Parrainages confirmés : <span className="font-semibold text-foreground">{referredCount}</span>
       </p>
@@ -87,14 +157,15 @@ export function ReferralQR({ referralCode, referredCount = 0 }: ReferralQRProps)
         <div className="flex gap-2">
           <Input
             id="referral-code"
-            value={referralCode}
+            value={localReferralCode || ""}
             readOnly
             className="bg-input text-foreground font-mono font-bold"
           />
           <Button
             variant="outline"
             onClick={() => {
-              navigator.clipboard.writeText(referralCode)
+              if (!localReferralCode) return
+              navigator.clipboard.writeText(localReferralCode)
               toast({
                 title: "Code copié !",
                 description: "Le code de parrainage a été copié",

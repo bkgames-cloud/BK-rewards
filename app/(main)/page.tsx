@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { DashboardClient } from "@/components/dashboard-client"
+import { SafePage } from "@/components/safe-page"
 import type { Profile, Season } from "@/lib/types"
 
 export const dynamic = "force-dynamic"
@@ -58,12 +59,14 @@ export default async function HomePage() {
   }
 
   return (
-    <DashboardClient
-      cadeaux={[]} // Vide car chargé dans DashboardClient
-      isAuthenticated={!!user}
-      userId={user?.id}
-      profile={profile}
-      season={season}
-    />
+    <SafePage>
+      <DashboardClient
+        cadeaux={[]} // Vide car chargé dans DashboardClient
+        isAuthenticated={!!user}
+        userId={user?.id}
+        profile={profile}
+        season={season}
+      />
+    </SafePage>
   )
 }

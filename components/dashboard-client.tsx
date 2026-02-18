@@ -17,6 +17,7 @@ import { AnimatedCounter } from "@/components/animated-counter"
 import { Confetti } from "@/components/confetti"
 import { addTicket, participateToGift } from "@/lib/rewards"
 import { addInAppNotification } from "@/lib/in-app-notifications"
+import { RewardPoolsGrid } from "@/components/reward-pools-grid"
 
 const backgroundAudio =
   typeof Audio !== "undefined" ? new Audio("/ambiance.mp3") : null
@@ -932,6 +933,9 @@ export function DashboardClient({
       {!showWallet && statusMessage && (
         <p className={`text-sm ${statusType === "error" ? "text-destructive" : "text-accent"}`}>{statusMessage}</p>
       )}
+
+      {/* Cagnottes Communautaires */}
+      <RewardPoolsGrid userId={userId} />
 
       {/* Cadeaux Grid */}
       <div className="space-y-4">
