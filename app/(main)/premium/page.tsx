@@ -19,6 +19,7 @@ export default function PremiumPage() {
   const [vipUntil, setVipUntil] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [sessionUser, setSessionUser] = useState<{ id: string; email?: string } | null>(null)
   const [claiming, setClaiming] = useState(false)
   const [lastClaim, setLastClaim] = useState<Date | null>(null)
   const [canClaim, setCanClaim] = useState(false)
@@ -38,6 +39,7 @@ export default function PremiumPage() {
         // Si user est null, arrêter immédiatement et afficher le message
         if (!user) {
           setIsAuthenticated(false)
+          setSessionUser(null)
           setIsVip(false)
           setLoading(false)
           return
@@ -47,16 +49,19 @@ export default function PremiumPage() {
         if (userError && Object.keys(userError).length > 0) {
           console.warn("Error getting user:", userError)
           setIsAuthenticated(false)
+          setSessionUser(null)
           setIsVip(false)
           setLoading(false)
           return
         }
 
         setIsAuthenticated(true)
+        setSessionUser({ id: user.id, email: user.email ?? undefined })
 
         // Récupérer le profil VIP - sans cache, directement depuis Supabase
         if (!user?.id) {
           setIsAuthenticated(false)
+          setSessionUser(null)
           setIsVip(false)
           setLoading(false)
           return
@@ -141,7 +146,7 @@ export default function PremiumPage() {
         return
       }
 
-      const response = await fetch("/api/checkout", {
+      const response = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plan: type }),
@@ -176,7 +181,7 @@ export default function PremiumPage() {
       "Vous perdrez tous les avantages premium :\n" +
       "- Zéro Publicité\n" +
       "- Badge VIP\n" +
-      "- Tickets gratuits quotidiens\n\n" +
+      "- Points gratuits quotidiens\n\n" +
       "Cette action est irréversible."
     )
 
@@ -240,7 +245,7 @@ export default function PremiumPage() {
 
   const handleOpenPortal = async () => {
     try {
-      const response = await fetch("/api/portal", { method: "POST" })
+      const response = await fetch("/api/stripe/portal", { method: "POST" })
       if (!response.ok) {
         toast({
           title: "Erreur",
@@ -294,7 +299,7 @@ export default function PremiumPage() {
         const tickets = data[0].tickets_granted
         toast({
           title: "Bonus réclamé !",
-          description: `Vous avez reçu ${tickets} tickets gratuits !`,
+          description: `Vous avez reçu ${tickets} points gratuits !`,
         })
         setLastClaim(new Date())
         setCanClaim(false)
@@ -311,7 +316,7 @@ export default function PremiumPage() {
         // Programmer une notification pour dans 24 heures
         if (notificationService.hasPermission()) {
           notificationService.scheduleNotification(
-            "🎁 Ton bonus quotidien de 10 tickets est prêt ! Viens le récupérer.",
+            "🎁 Ton bonus quotidien de 10 points est prêt ! Viens le récupérer.",
             24 * 60 * 60 * 1000, // 24 heures en millisecondes
             {
               body: "N'oublie pas de réclamer ton bonus VIP quotidien !",
@@ -346,7 +351,8 @@ export default function PremiumPage() {
     }
   }
 
-  if (loading) {
+  // ── Guard anti-400 : tant que la session n'est pas résolue, afficher le loader ──
+  if (loading || (!sessionUser && isAuthenticated)) {
     return (
       <div className="flex min-h-screen flex-col gap-4 p-4">
         <div className="text-center">
@@ -419,7 +425,7 @@ export default function PremiumPage() {
               {canClaim ? (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">
-                    Réclamez votre bonus de 5 à 10 tickets gratuits maintenant !
+                    Réclamez votre bonus de 5 à 10 points gratuits maintenant !
                   </p>
                   <Button
                     onClick={() => {
@@ -502,7 +508,7 @@ export default function PremiumPage() {
               </li>
               <li className="flex items-center gap-2 text-sm text-foreground">
                 <Check className="h-4 w-4 text-green-500" />
-                Crédit Automatique de 5 à 10 tickets par jour
+                Crédit Automatique de 5 à 10 points par jour
               </li>
             </ul>
             <Button
@@ -541,7 +547,7 @@ export default function PremiumPage() {
               </li>
               <li className="flex items-center gap-2 text-sm text-foreground">
                 <Check className="h-4 w-4 text-green-500" />
-                Crédit Automatique de 5 à 10 tickets par jour
+                Crédit Automatique de 5 à 10 points par jour
               </li>
             </ul>
             <Button
@@ -586,10 +592,10 @@ export default function PremiumPage() {
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-accent" />
-                <h3 className="font-semibold text-foreground">Tickets Gratuits</h3>
+                <h3 className="font-semibold text-foreground">Points Gratuits</h3>
               </div>
               <p className="text-sm text-muted-foreground">
-                Recevez 5 à 10 tickets gratuits chaque jour automatiquement.
+                Recevez 5 à 10 points gratuits chaque jour automatiquement.
               </p>
             </div>
           </div>

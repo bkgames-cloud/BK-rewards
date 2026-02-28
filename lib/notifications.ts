@@ -5,8 +5,9 @@ export class NotificationService {
   private permission: NotificationPermission = "default"
 
   private constructor() {
-    if (typeof window !== "undefined") {
-      this.permission = Notification.permission
+    const notificationApi = this.getNotificationApi()
+    if (notificationApi) {
+      this.permission = notificationApi.permission
     }
   }
 
@@ -22,6 +23,12 @@ export class NotificationService {
    */
   public isSupported(): boolean {
     return typeof window !== "undefined" && "Notification" in window
+  }
+
+  private getNotificationApi(): typeof Notification | null {
+    if (typeof window === "undefined") return null
+    if (!("Notification" in window)) return null
+    return window.Notification
   }
 
   /**
@@ -50,7 +57,9 @@ export class NotificationService {
     }
 
     try {
-      const permission = await Notification.requestPermission()
+      const notificationApi = this.getNotificationApi()
+      if (!notificationApi) return false
+      const permission = await notificationApi.requestPermission()
       this.permission = permission
       return permission === "granted"
     } catch (error) {
@@ -72,7 +81,9 @@ export class NotificationService {
     }
 
     try {
-      const notification = new Notification(title, {
+      const notificationApi = this.getNotificationApi()
+      if (!notificationApi) return
+      const notification = new notificationApi(title, {
         icon: "/favicon.ico",
         badge: "/favicon.ico",
         ...options,
@@ -85,7 +96,9 @@ export class NotificationService {
 
       // Gérer le clic sur la notification
       notification.onclick = () => {
-        window.focus()
+        if (typeof window !== "undefined") {
+          window.focus()
+        }
         notification.close()
       }
     } catch (error) {
@@ -199,13 +212,15 @@ export const notificationService = NotificationService.getInstance()
 
 // Vérifier périodiquement les notifications programmées (toutes les minutes)
 if (typeof window !== "undefined") {
-  setInterval(() => {
-    notificationService.checkScheduledNotifications()
-  }, 60000) // Vérifier toutes les minutes
+  if ("Notification" in window) {
+    setInterval(() => {
+      notificationService.checkScheduledNotifications()
+    }, 60000) // Vérifier toutes les minutes
 
-  // Vérifier au chargement de la page
-  window.addEventListener("load", () => {
-    notificationService.checkScheduledNotifications()
-    notificationService.cleanupExpiredNotifications()
-  })
+    // Vérifier au chargement de la page
+    window.addEventListener("load", () => {
+      notificationService.checkScheduledNotifications()
+      notificationService.cleanupExpiredNotifications()
+    })
+  }
 }

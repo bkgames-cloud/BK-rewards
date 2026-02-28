@@ -17,6 +17,6 @@ export function getPrizeFallbackImage(cadeauNom: string): string {
   if (name.includes("5€") || name.includes("5 €")) return "/placeholder.jpg"
 
   // Fallback générique si aucun mapping ne matche
-  return "/placeholder.svg?height=96&width=96"
+  return "/placeholder.jpg"
 }
 

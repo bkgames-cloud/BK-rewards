@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Info } from "lucide-react"
+import { motion } from "framer-motion"
+import confetti from "canvas-confetti"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,22 +11,18 @@ import { VideoOverlay } from "@/components/video-overlay"
 import { useToast } from "@/hooks/use-toast"
 import { Confetti } from "@/components/confetti"
 import { soundService } from "@/lib/sounds"
-import type { RewardPool } from "@/lib/types"
-
-interface UserStatsMap {
-  [poolId: string]: { views: number; tickets: number }
-}
 
 export function ConcoursClient() {
-  const [pools, setPools] = useState<RewardPool[]>([])
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
-  const [userStats, setUserStats] = useState<UserStatsMap>({})
-  const [selectedPoolId, setSelectedPoolId] = useState<string>("")
   const [isOverlayOpen, setIsOverlayOpen] = useState(false)
-  const [videoAction, setVideoAction] = useState<"bonus" | "scratch" | "wheel-rescue" | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [videoAction, setVideoAction] = useState<"scratch" | "wheel-rescue" | null>(null)
   const [userPoints, setUserPoints] = useState(0)
+  const [isVip, setIsVip] = useState(false)
+  const [isVipPlus, setIsVipPlus] = useState(false)
+  const [vipPlusCount, setVipPlusCount] = useState(0)
+  const [previousWinner, setPreviousWinner] = useState<{ name: string; score: number } | null>(null)
+  const [lastVipSlotAt, setLastVipSlotAt] = useState<Date | null>(null)
   const [lastScratchAt, setLastScratchAt] = useState<Date | null>(null)
   const [lastWheelAt, setLastWheelAt] = useState<Date | null>(null)
   const [now, setNow] = useState(Date.now())
@@ -40,24 +38,41 @@ export function ConcoursClient() {
   const [showRescueModal, setShowRescueModal] = useState(false)
   const [pendingRescueBet, setPendingRescueBet] = useState<number | null>(null)
   const [infoModal, setInfoModal] = useState<"scratch" | "wheel" | null>(null)
+  const [slotSpinning, setSlotSpinning] = useState(false)
+  const [slotResult, setSlotResult] = useState<string[] | null>(null)
+  const [slotMessage, setSlotMessage] = useState<string | null>(null)
+  const [slotExtraSpinAvailable, setSlotExtraSpinAvailable] = useState(false)
+  const [slotSpinSeed, setSlotSpinSeed] = useState(0)
+  const [isSimulatingAd, setIsSimulatingAd] = useState(false)
+  const lastVipAdClickRef = useRef<number>(0)
+  const slotTimeoutRef = useRef<number | null>(null)
+  const adSimulationTimeoutRef = useRef<number | null>(null)
+  const [tapArenaActive, setTapArenaActive] = useState(false)
+  const [tapArenaCount, setTapArenaCount] = useState(0)
+  const [tapArenaTimeLeft, setTapArenaTimeLeft] = useState(30)
+  const [tapArenaResult, setTapArenaResult] = useState<string | null>(null)
+  const tapLastClickRef = useRef<number>(0)
+  const tapIntervalRef = useRef<number | null>(null)
+  const tapArenaCountRef = useRef<number>(0)
   const { toast } = useToast()
 
-  useEffect(() => {
-    const fetchPools = async () => {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from("rewards_pools")
-        .select("*")
-        .order("target_videos", { ascending: false })
-      if (!error && data) {
-        setPools(data as RewardPool[])
-        if (!selectedPoolId && data.length > 0) {
-          setSelectedPoolId(data[0].id)
-        }
-      }
-      setLoading(false)
+  // ─── Relire les points depuis Supabase ───
+  const refreshPoints = async (uid?: string) => {
+    const id = uid || userId
+    if (!id) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from("profiles")
+      .select("points")
+      .eq("id", id)
+      .maybeSingle()
+    if (typeof data?.points === "number") {
+      setUserPoints(data.points)
     }
-    fetchPools()
+  }
+
+  useEffect(() => {
+    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -69,35 +84,64 @@ export function ConcoursClient() {
       setUserId(user?.id || null)
 
       if (!user?.id) {
-        setUserStats({})
+        // Pas d'utilisateur connecté — réinitialiser les états
+        setUserPoints(0)
+        setIsVip(false)
+        setIsVipPlus(false)
+        setLastScratchAt(null)
+        setLastWheelAt(null)
+        setLastVipSlotAt(null)
+        setLoading(false)
         return
       }
 
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("points, last_scratch_at, last_wheel_at")
+        .select("points, last_scratch_at, last_wheel_at, is_vip, is_vip_plus, last_vip_slot_at")
         .eq("id", user.id)
         .maybeSingle()
 
-      setUserPoints(profileData?.points || 0)
+      // On force l'affichage des points
+      const points = profileData?.points ?? 0
+      setUserPoints(points)
+      
+      const vipPlus = !!profileData?.is_vip_plus
+      const vipSimple = !!profileData?.is_vip
+      setIsVip(vipSimple || vipPlus)
+      setIsVipPlus(vipPlus)
+
+      // Timers pour les jeux
+      setLastVipSlotAt(profileData?.last_vip_slot_at ? new Date(profileData.last_vip_slot_at) : null)
       setLastScratchAt(profileData?.last_scratch_at ? new Date(profileData.last_scratch_at) : null)
       setLastWheelAt(profileData?.last_wheel_at ? new Date(profileData.last_wheel_at) : null)
 
-      const { data: stats } = await supabase
-        .from("rewards_pool_tickets")
-        .select("pool_id, views_count, tickets_count")
-        .eq("user_id", user.id)
-
-      const map: UserStatsMap = {}
-      for (const row of stats || []) {
-        const poolId = (row as { pool_id?: string }).pool_id
-        if (!poolId) continue
-        map[poolId] = {
-          views: (row as { views_count?: number }).views_count || 0,
-          tickets: (row as { tickets_count?: number }).tickets_count || 0,
+      if (vipPlus) {
+        const { data: vipPlusCountData } = await supabase.rpc("get_vip_plus_count")
+        if (typeof vipPlusCountData === "number") {
+          setVipPlusCount(vipPlusCountData)
         }
       }
-      setUserStats(map)
+
+      // TRÈS IMPORTANT : on dit que le chargement est terminé
+      setLoading(false)
+      if (vipPlus) {
+        const { data: vipPlusCountData } = await supabase.rpc("get_vip_plus_count")
+        if (typeof vipPlusCountData === "number") {
+          setVipPlusCount(vipPlusCountData)
+        }
+        const { data: previousWinnerData } = await supabase.rpc("get_tap_tap_previous_week_winner")
+        if (previousWinnerData && previousWinnerData.length > 0) {
+          const winner = previousWinnerData[0] as { display_name?: string; score?: number }
+          setPreviousWinner({
+            name: winner.display_name || "VIP+",
+            score: winner.score || 0,
+          })
+        } else {
+          setPreviousWinner(null)
+        }
+      }
+
+      // Aucun chargement de points ici : la page Concours ne montre que les mini-jeux.
     }
 
     fetchUser()
@@ -108,59 +152,24 @@ export function ConcoursClient() {
     return () => clearInterval(interval)
   }, [])
 
-  const handleOpenVideo = () => {
-    if (!selectedPoolId) {
-      toast({ title: "Erreur", description: "Choisissez un lot avant de lancer la vidéo.", variant: "destructive" })
-      return
-    }
-    setVideoAction("bonus")
-    setIsOverlayOpen(true)
-  }
-
-  const handleBonusVideoComplete = async () => {
-    if (!selectedPoolId) return
-    setIsSubmitting(true)
-    try {
-      const response = await fetch("/api/rewards-pools/watch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ poolId: selectedPoolId }),
-      })
-
-      const payload = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        const message =
-          payload?.message === "day_limit"
-            ? "Limite journalière atteinte (25 vidéos)."
-            : "Impossible d'enregistrer la vidéo."
-        toast({ title: "Erreur", description: message, variant: "destructive" })
-        return
+  useEffect(() => {
+    return () => {
+      if (slotTimeoutRef.current) {
+        window.clearTimeout(slotTimeoutRef.current)
+        slotTimeoutRef.current = null
       }
-
-      setUserStats((prev) => ({
-        ...prev,
-        [selectedPoolId]: {
-          views: payload.user_views ?? ((prev[selectedPoolId]?.views || 0) + 1),
-          tickets: payload.user_tickets ?? (prev[selectedPoolId]?.tickets || 0),
-        },
-      }))
-
-      toast({
-        title: "Merci !",
-        description: "Votre vidéo a été prise en compte.",
-      })
-    } finally {
-      setIsSubmitting(false)
+      if (adSimulationTimeoutRef.current) {
+        window.clearTimeout(adSimulationTimeoutRef.current)
+        adSimulationTimeoutRef.current = null
+      }
+      if (tapIntervalRef.current) {
+        window.clearInterval(tapIntervalRef.current)
+        tapIntervalRef.current = null
+      }
     }
-  }
+  }, [])
 
   const handleVideoComplete = async () => {
-    if (videoAction === "bonus") {
-      await handleBonusVideoComplete()
-      return
-    }
-
     if (videoAction === "scratch") {
       setScratchUnlocked(true)
       setShowScratchModal(true)
@@ -168,28 +177,41 @@ export function ConcoursClient() {
     }
 
     if (videoAction === "wheel-rescue" && pendingRescueBet && userId) {
-      const newPoints = userPoints + pendingRescueBet
-      const supabase = createClient()
-      await supabase
-        .from("profiles")
-        .update({ points: newPoints })
-        .eq("id", userId)
-      setUserPoints(newPoints)
-      setPendingRescueBet(null)
-      setShowRescueModal(false)
-      toast({
-        title: "Mise récupérée !",
-        description: "Votre mise a été recréditée.",
-      })
+      try {
+        const response = await fetch("/api/user/update-points", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pointsToAdd: pendingRescueBet }),
+        })
+        if (response.ok) {
+          setPendingRescueBet(null)
+          setShowRescueModal(false)
+          // Relire les points depuis la base
+          await refreshPoints()
+          toast({
+            title: "Mise récupérée !",
+            description: "Votre mise a été recréditée.",
+          })
+        }
+      } catch {
+        toast({
+          title: "Erreur",
+          description: "Impossible de récupérer la mise.",
+          variant: "destructive",
+        })
+      }
       return
     }
   }
 
-  const SCRATCH_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000
-  const WHEEL_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
+  const cooldownMultiplier = isVipPlus ? 0.5 : 1
+  const SCRATCH_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000 * cooldownMultiplier
+  const WHEEL_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000 * cooldownMultiplier
+  const VIP_SLOT_COOLDOWN_MS = 24 * 60 * 60 * 1000
 
   const scratchAvailable = !lastScratchAt || now - lastScratchAt.getTime() >= SCRATCH_COOLDOWN_MS
   const wheelAvailable = !lastWheelAt || now - lastWheelAt.getTime() >= WHEEL_COOLDOWN_MS
+  const vipSlotAvailable = !lastVipSlotAt || now - lastVipSlotAt.getTime() >= VIP_SLOT_COOLDOWN_MS
 
   const formatRemaining = (ms: number) => {
     if (ms <= 0) return "Disponible"
@@ -208,6 +230,9 @@ export function ConcoursClient() {
   const wheelRemaining = wheelAvailable
     ? "Disponible"
     : formatRemaining(WHEEL_COOLDOWN_MS - (now - (lastWheelAt?.getTime() || 0)))
+  const vipSlotRemaining = vipSlotAvailable
+    ? "Disponible"
+    : formatRemaining(VIP_SLOT_COOLDOWN_MS - (now - (lastVipSlotAt?.getTime() || 0)))
 
   const openScratchUnlock = () => {
     if (!userId) {
@@ -223,24 +248,39 @@ export function ConcoursClient() {
     if (!userId) return
     if (scratchResult !== null) return
     const roll = Math.random()
-    let resultTickets = 0
-    if (roll < 0.65) resultTickets = 0
-    else if (roll < 0.9) resultTickets = 1
-    else resultTickets = 2
+    let resultPoints = 0
+    if (roll < 0.65) resultPoints = 0
+    else if (roll < 0.9) resultPoints = 1
+    else resultPoints = 2
 
-    const supabase = createClient()
     const nowIso = new Date().toISOString()
-    const newPoints = userPoints + resultTickets
-    await supabase
-      .from("profiles")
-      .update({ points: newPoints, last_scratch_at: nowIso })
-      .eq("id", userId)
+    
+    // Utiliser l'API unique pour points + timestamp (contourne les RLS)
+    try {
+      await fetch("/api/user/update-points", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(resultPoints > 0 ? { pointsToAdd: resultPoints } : {}),
+          timestamps: { last_scratch_at: nowIso },
+        }),
+      })
+    } catch {
+      // Ignore error, continue anyway
+    }
 
-    setUserPoints(newPoints)
+    // Persister le timer scratch dans localStorage
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bk_last_scratch_at", nowIso)
+    }
+
     setLastScratchAt(new Date(nowIso))
-    setScratchResult(resultTickets)
+    setScratchResult(resultPoints)
 
-    if (resultTickets > 0) {
+    // Relire les points depuis la base pour avoir le solde exact
+    await refreshPoints()
+
+    if (resultPoints > 0) {
       setShowConfetti(true)
       soundService.playSuccess()
       setTimeout(() => setShowConfetti(false), 2500)
@@ -259,22 +299,44 @@ export function ConcoursClient() {
     if (wheelSpinning) return
     if (userPoints < wheelBet) {
       toast({
-        title: "Tickets insuffisants",
-        description: `Il vous faut ${wheelBet} tickets pour miser.`,
+        title: "Points insuffisants",
+        description: `Il vous faut ${wheelBet} points pour miser.`,
         variant: "destructive",
       })
       return
     }
 
-    const supabase = createClient()
     const nowIso = new Date().toISOString()
     const pointsAfterBet = userPoints - wheelBet
-    await supabase
-      .from("profiles")
-      .update({ points: pointsAfterBet, last_wheel_at: nowIso })
-      .eq("id", userId)
+    
+    // Utiliser l'API unique pour déduire la mise + mettre à jour le timer (contourne les RLS)
+    try {
+      const response = await fetch("/api/user/update-points", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pointsToAdd: -wheelBet,
+          timestamps: { last_wheel_at: nowIso },
+        }),
+      })
+      if (!response.ok) {
+        toast({
+          title: "Erreur",
+          description: "Impossible de placer la mise.",
+          variant: "destructive",
+        })
+        return
+      }
+      setUserPoints(pointsAfterBet)
+    } catch {
+      toast({
+        title: "Erreur",
+        description: "Impossible de placer la mise.",
+        variant: "destructive",
+      })
+      return
+    }
 
-    setUserPoints(pointsAfterBet)
     setLastWheelAt(new Date(nowIso))
 
     setWheelResult(null)
@@ -301,12 +363,21 @@ export function ConcoursClient() {
       }
 
       const payout = wheelBet * multiplier
-      const finalPoints = pointsAfterBet + payout
-      await supabase
-        .from("profiles")
-        .update({ points: finalPoints })
-        .eq("id", userId)
-      setUserPoints(finalPoints)
+      if (payout > 0) {
+        // Utiliser l'API pour ajouter les gains
+        try {
+          await fetch("/api/user/update-points", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pointsToAdd: payout }),
+          })
+        } catch {
+          // Ignore error, continue anyway
+        }
+      }
+
+      // Relire les points depuis la base pour avoir le solde exact
+      await refreshPoints()
 
       setShowConfetti(true)
       soundService.playSuccess()
@@ -314,7 +385,158 @@ export function ConcoursClient() {
     }, 1500)
   }
 
-  const selectedStats = selectedPoolId ? userStats[selectedPoolId] : null
+  const slotSymbols = ["💎", "💰", "🎁", "🎫", "❌"]
+
+  const getSlotOutcome = () => {
+    const roll = Math.random()
+    if (roll < 0.01) return { symbol: "💎", reward: 250, label: "Jackpot", isJackpot: true }
+    if (roll < 0.06) return { symbol: "💰", reward: 100, label: "Grand gain", isJackpot: false }
+    if (roll < 0.21) return { symbol: "🎁", reward: 20, label: "Petit gain", isJackpot: false }
+    if (roll < 0.41) return { symbol: "🎫", reward: 5, label: "Consolation", isJackpot: false }
+    return { symbol: "❌", reward: 0, label: "Perdu", isJackpot: false }
+  }
+
+  const finalizeSlotReward = async (reward: number, isJackpot: boolean) => {
+    if (!userId) return
+    const nowIso = new Date().toISOString()
+    
+    // Utiliser l'API unique pour points + timestamp (contourne les RLS)
+    try {
+      await fetch("/api/user/update-points", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(reward > 0 ? { pointsToAdd: reward } : {}),
+          timestamps: { last_vip_slot_at: nowIso },
+        }),
+      })
+    } catch {
+      // Ignore error, continue anyway
+    }
+    
+    // Relire les points depuis la base pour avoir le solde exact
+    await refreshPoints()
+    setLastVipSlotAt(new Date(nowIso))
+    if (isJackpot) {
+      try {
+        confetti({ particleCount: 180, spread: 75, origin: { y: 0.6 } })
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  const handleVipSpin = async () => {
+    if (!userId || !isVip) return
+    if (slotSpinning || isSimulatingAd) return
+    if (!vipSlotAvailable && !slotExtraSpinAvailable) {
+      setSlotMessage("Regardez une vidéo pour rejouer.")
+      return
+    }
+
+    const outcome = getSlotOutcome()
+    setSlotMessage(null)
+    setSlotResult([outcome.symbol, outcome.symbol, outcome.symbol])
+    setSlotExtraSpinAvailable(false)
+    setSlotSpinning(true)
+    setSlotSpinSeed((prev) => prev + 1)
+
+    if (slotTimeoutRef.current) {
+      window.clearTimeout(slotTimeoutRef.current)
+      slotTimeoutRef.current = null
+    }
+
+    slotTimeoutRef.current = window.setTimeout(async () => {
+      setSlotSpinning(false)
+      await finalizeSlotReward(outcome.reward, outcome.isJackpot)
+      if (outcome.reward > 0) {
+        setSlotMessage(`${outcome.label} : +${outcome.reward} point${outcome.reward > 1 ? "s" : ""}`)
+      } else {
+        setSlotMessage("Perdu. Retentez votre chance plus tard.")
+      }
+    }, 1800)
+  }
+
+  const handleVipAdSimulation = () => {
+    if (!userId || !isVip) return
+    if (isSimulatingAd || slotSpinning) return
+    const nowTime = Date.now()
+    if (nowTime - lastVipAdClickRef.current < 1000) {
+      setSlotMessage("Veuillez patienter avant de relancer une simulation.")
+      return
+    }
+    lastVipAdClickRef.current = nowTime
+
+    setIsSimulatingAd(true)
+    setSlotMessage("Simulation de publicité en cours...")
+
+    if (adSimulationTimeoutRef.current) {
+      window.clearTimeout(adSimulationTimeoutRef.current)
+      adSimulationTimeoutRef.current = null
+    }
+
+    adSimulationTimeoutRef.current = window.setTimeout(() => {
+      setIsSimulatingAd(false)
+      setSlotExtraSpinAvailable(true)
+      setSlotMessage("Spin supplémentaire débloqué !")
+    }, 5000)
+  }
+
+  const startTapArena = () => {
+    if (!isVipPlus || tapArenaActive) return
+    setTapArenaResult(null)
+    setTapArenaCount(0)
+    tapArenaCountRef.current = 0
+    setTapArenaTimeLeft(30)
+    setTapArenaActive(true)
+
+    if (tapIntervalRef.current) {
+      window.clearInterval(tapIntervalRef.current)
+      tapIntervalRef.current = null
+    }
+
+    tapIntervalRef.current = window.setInterval(() => {
+      setTapArenaTimeLeft((prev) => {
+        if (prev <= 1) {
+          if (tapIntervalRef.current) {
+            window.clearInterval(tapIntervalRef.current)
+            tapIntervalRef.current = null
+          }
+          setTapArenaActive(false)
+          const finalScore = tapArenaCountRef.current
+          setTapArenaResult(`Score final : ${finalScore} taps`)
+          submitTapScore(finalScore)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+  }
+
+  const handleTapArenaClick = () => {
+    if (!tapArenaActive) return
+    const nowTime = performance.now()
+    if (nowTime - tapLastClickRef.current < 60) {
+      return
+    }
+    tapLastClickRef.current = nowTime
+    setTapArenaCount((prev) => prev + 1)
+    tapArenaCountRef.current += 1
+  }
+
+  const submitTapScore = async (score: number) => {
+    if (!userId || !isVipPlus) return
+    const supabase = createClient()
+    const { error } = await supabase.rpc("submit_tap_tap_score", { p_score: score })
+    if (error) {
+      console.error("[TapTap] Score submit error:", error)
+      return
+    }
+    toast({
+      title: "Score enregistré",
+      description: `Votre score (${score}) a été ajouté au classement.`,
+    })
+  }
 
   const videoContextLabel = useMemo(() => {
     if (videoAction === "scratch") return "BK Scratch"
@@ -323,9 +545,9 @@ export function ConcoursClient() {
   }, [videoAction])
 
   const videoRewardLabel = useMemo(() => {
-    if (videoAction === "scratch") return "Ticket débloqué"
+    if (videoAction === "scratch") return "Jeu débloqué"
     if (videoAction === "wheel-rescue") return "Récupérer la mise"
-    return "+1 vidéo"
+    return "Mini-jeux"
   }, [videoAction])
 
   if (loading) {
@@ -339,276 +561,142 @@ export function ConcoursClient() {
 
   return (
     <div className="flex flex-col gap-6 p-4">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-xl font-semibold text-foreground">Mini-Jeux</h2>
-        <p className="text-sm text-muted-foreground">
-          Essayez bientôt nos mini-jeux et gagnez des tickets bonus.
-        </p>
-      </div>
+    <div className="flex flex-col gap-2">
+      <h2 className="text-xl font-semibold text-foreground">Mini-Jeux</h2>
+      <p className="text-sm text-muted-foreground">
+        Gagnez des points bonus avec nos mini-jeux.
+      </p>
+    </div>
 
-      {showConfetti && <Confetti />}
+    {showConfetti && <Confetti />}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="border border-border/50 bg-[#1a1a1a] shadow-lg">
-          <CardHeader className="pb-2 flex items-center justify-between">
-            <CardTitle className="text-lg text-foreground">BK Scratch</CardTitle>
-            <button
-              className="rounded-full border border-border/60 p-1 text-muted-foreground hover:text-foreground"
-              onClick={() => setInfoModal("scratch")}
-            >
-              <Info className="h-4 w-4" />
-            </button>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Grattez pour tenter de gagner des tickets bonus.
-            </p>
-            <div className="rounded-lg bg-secondary/40 p-3 text-sm">
-              <p className="text-muted-foreground">
-                Disponibilité : <span className="font-semibold text-foreground">{scratchRemaining}</span>
-              </p>
-            </div>
-            <Button
-              className="w-full"
-              onClick={openScratchUnlock}
-              disabled={!scratchAvailable || !userId}
-            >
-              {scratchAvailable ? "Regarder une vidéo pour débloquer" : "Revenez plus tard"}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border/50 bg-[#1a1a1a] shadow-lg">
-          <CardHeader className="pb-2 flex items-center justify-between">
-            <CardTitle className="text-lg text-foreground">BK Wheel</CardTitle>
-            <button
-              className="rounded-full border border-border/60 p-1 text-muted-foreground hover:text-foreground"
-              onClick={() => setInfoModal("wheel")}
-            >
-              <Info className="h-4 w-4" />
-            </button>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Misez vos tickets et tentez de multiplier votre gain.
-            </p>
-            <div className="rounded-lg bg-secondary/40 p-3 text-sm">
-              <p className="text-muted-foreground">
-                Disponibilité : <span className="font-semibold text-foreground">{wheelRemaining}</span>
-              </p>
-              <p className="text-muted-foreground mt-2">
-                Vos tickets : <span className="font-semibold text-foreground">{userPoints}</span>
-              </p>
-            </div>
-            <Button
-              className="w-full"
-              onClick={() => setShowWheelModal(true)}
-              disabled={!wheelAvailable || !userId}
-            >
-              {wheelAvailable ? "Lancer la roue" : "Revenez plus tard"}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
+    <div className="grid gap-4 lg:grid-cols-2">
       <Card className="border border-border/50 bg-[#1a1a1a] shadow-lg">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg text-foreground">Bonus tickets</CardTitle>
+        <CardHeader className="pb-2 flex items-center justify-between">
+          <CardTitle className="text-lg text-foreground">BK Scratch</CardTitle>
+          <button
+            className="rounded-full border border-border/60 p-1 text-muted-foreground hover:text-foreground"
+            onClick={() => setInfoModal("scratch")}
+          >
+            <Info className="h-4 w-4" />
+          </button>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="pool-select" className="text-sm text-muted-foreground">
-              Choisissez un lot
-            </label>
-            <select
-              id="pool-select"
-              value={selectedPoolId}
-              onChange={(event) => setSelectedPoolId(event.target.value)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-            >
-              {pools.map((pool) => (
-                <option key={pool.id} value={pool.id}>
-                  {pool.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
+          <p className="text-sm text-muted-foreground">Grattez pour gagner des points.</p>
           <div className="rounded-lg bg-secondary/40 p-3 text-sm">
-            <p className="text-muted-foreground">
-              Vos vues : <span className="font-semibold text-foreground">{selectedStats?.views || 0}</span>
-            </p>
-            <p className="text-muted-foreground">
-              Vos tickets : <span className="font-semibold text-foreground">{selectedStats?.tickets || 0}</span>
-            </p>
+            <p>Disponibilité : <span className="font-semibold">{scratchRemaining}</span></p>
           </div>
-
-          <Button
-            className="w-full"
-            onClick={handleOpenVideo}
-            disabled={!userId || isSubmitting}
-          >
-            {userId ? "Regarder une vidéo" : "Connectez-vous pour participer"}
+          <Button className="w-full" onClick={openScratchUnlock} disabled={!scratchAvailable || !userId}>
+            {scratchAvailable ? "Regarder une vidéo" : "Revenez plus tard"}
           </Button>
         </CardContent>
       </Card>
 
-      <VideoOverlay
-        isOpen={isOverlayOpen}
-        onClose={() => setIsOverlayOpen(false)}
-        onComplete={handleVideoComplete}
-        contextLabel={videoContextLabel}
-        rewardLabel={videoRewardLabel}
-      />
+      <Card className="border border-border/50 bg-[#1a1a1a] shadow-lg">
+        <CardHeader className="pb-2 flex items-center justify-between">
+          <CardTitle className="text-lg text-foreground">BK Wheel</CardTitle>
+          <button
+            className="rounded-full border border-border/60 p-1 text-muted-foreground hover:text-foreground"
+            onClick={() => setInfoModal("wheel")}
+          >
+            <Info className="h-4 w-4" />
+          </button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">Multipliez vos points.</p>
+          <div className="rounded-lg bg-secondary/40 p-3 text-sm">
+            <p>Points : <span className="font-semibold">{userPoints}</span></p>
+          </div>
+          <Button className="w-full" onClick={() => setShowWheelModal(true)} disabled={!wheelAvailable || !userId}>
+            Lancer la roue
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
 
-      {showScratchModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <Card className="w-full max-w-sm border border-border/60 bg-[#111111] shadow-xl">
-            <CardHeader className="pb-2 text-center">
-              <CardTitle className="text-lg text-foreground">BK Scratch</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-center">
-              <div className="relative overflow-hidden rounded-xl border border-dashed border-border/60 bg-secondary/30 p-6 text-2xl font-bold tracking-wide">
-                <div className="relative z-10">
-                  {scratchResult === null
-                    ? "BK"
-                    : scratchResult === 0
-                      ? "Perdu"
-                      : `+${scratchResult} ticket${scratchResult > 1 ? "s" : ""}`}
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-foreground">Zone VIP</h3>
+      {!isVip ? (
+        <Card className="border border-border/50 bg-[#1a1a1a] shadow-lg">
+          <CardContent className="p-4 text-sm text-muted-foreground">Réservé aux membres VIP.</CardContent>
+        </Card>
+      ) : (
+        <Card className="border border-yellow-500/30 bg-[#0d0b07] shadow-[0_0_30px_rgba(245,158,11,0.12)]">
+          <CardHeader><CardTitle className="text-lg text-yellow-300">Slot Machine VIP</CardTitle></CardHeader>
+          <CardContent className="space-y-4 text-center">
+            <div className="grid grid-cols-3 gap-3">
+              {[0, 1, 2].map((idx) => (
+                <div key={idx} className="h-20 flex items-center justify-center rounded-lg border border-yellow-500/30 bg-black/70 text-3xl">
+                  {slotSpinning ? "🎰" : (slotResult ? slotResult[idx] : "❔")}
                 </div>
-                {scratchResult === null && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-yellow-500/30 via-yellow-300/20 to-yellow-600/30 text-3xl font-black text-yellow-200/80">
-                    BK
-                  </div>
-                )}
-              </div>
-              {scratchResult === null ? (
-                <Button className="w-full" onClick={revealScratch}>
-                  Gratter
-                </Button>
-              ) : scratchResult === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Perdu, mais retente ta chance d'ici 3 jours.
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Bravo ! Votre gain est ajouté à votre solde.
-                </p>
-              )}
-              <Button variant="outline" className="w-full" onClick={resetScratch}>
-                Fermer
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+              ))}
+            </div>
+            <Button className="w-full bg-yellow-500 text-black" onClick={handleVipSpin} disabled={slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)}>
+              Lancer le spin
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
-      {showWheelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <Card className="w-full max-w-sm border border-border/60 bg-[#111111] shadow-xl">
-            <CardHeader className="pb-2 text-center">
-              <CardTitle className="text-lg text-foreground">BK Wheel</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-center">
-              <div className="relative mx-auto h-48 w-48">
-                <div
-                  className="absolute inset-0 rounded-full border-4 border-border/60 bg-[conic-gradient(from_90deg,#fbbf24_0%25,#fde68a_25%25,#f97316_50%25,#fbbf24_75%25,#fde68a_100%)] shadow-lg transition-transform duration-1000 ease-out"
-                  style={{ transform: `rotate(${wheelAngle}deg)` }}
-                />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="rounded-full bg-background/80 px-4 py-2 text-sm font-semibold">
-                    {wheelResult === null
-                      ? "Tournez la roue"
-                      : wheelResult === 0
-                        ? "Perdu"
-                        : `x${wheelResult}`}
-                  </div>
-                </div>
-                <div className="absolute -top-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 bg-accent shadow-md" />
-              </div>
-              <div className="flex items-center justify-center gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setWheelBet((prev) => Math.max(1, prev - 1))}
-                >
-                  -
-                </Button>
-                <span className="text-lg font-semibold">{wheelBet} ticket(s)</span>
-                <Button
-                  variant="outline"
-                  onClick={() => setWheelBet((prev) => Math.min(3, prev + 1))}
-                >
-                  +
-                </Button>
-              </div>
-              <Button className="w-full" onClick={spinWheel} disabled={isSubmitting || wheelSpinning}>
-                Lancer la roue
-              </Button>
-              <Button variant="outline" className="w-full" onClick={() => setShowWheelModal(false)}>
-                Fermer
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {showRescueModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <Card className="w-full max-w-sm border border-border/60 bg-[#111111] shadow-xl">
-            <CardHeader className="pb-2 text-center">
-              <CardTitle className="text-lg text-foreground">Tout n'est pas perdu</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                Visionne une vidéo et récupère ta mise.
-              </p>
-              <Button
-                className="w-full"
-                onClick={() => {
-                  setVideoAction("wheel-rescue")
-                  setIsOverlayOpen(true)
-                }}
-              >
-                Visionner
-              </Button>
-              <Button variant="outline" className="w-full" onClick={() => setShowRescueModal(false)}>
-                Annuler
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {infoModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <Card className="w-full max-w-sm border border-border/60 bg-[#111111] shadow-xl">
-            <CardHeader className="pb-2 text-center">
-              <CardTitle className="text-lg text-foreground">Informations</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>Règlement des Mini-Jeux BK Rewards :</p>
-              <p>
-                Gratuité : Tous les jeux sont gratuits. Les tickets gagnés sont des points virtuels sans valeur
-                monétaire réelle.
-              </p>
-              <p>Probabilités de gain :</p>
-              <p>Grattage : Perte (65%), 1 Ticket (25%), 2 Tickets (10%).</p>
-              <p>Roue : Perte (50%), x1 (30%), x2 (15%), x3 (5%).</p>
-              <p>
-                Conditions : L'utilisation de robots, VPN ou toute fraude entraîne la suppression des tickets et le
-                bannissement.
-              </p>
-              <p>
-                Indépendance : Apple Inc. et Google LLC ne sont pas impliqués dans ces concours et ne parrainent pas
-                cette application.
-              </p>
-              <Button className="w-full" onClick={() => setInfoModal(null)}>
-                Fermer
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+      {/* --- ZONE TAP-TAP --- */}
+      {isVipPlus && (
+        <Card className="border border-slate-500/40 bg-slate-900/50">
+          <CardHeader><CardTitle className="text-slate-100">Tap-Tap Arena VIP+</CardTitle></CardHeader>
+          <CardContent className="text-center space-y-4">
+            <div className="text-2xl font-bold text-white">{tapArenaCount} Taps</div>
+            <Button className="w-full" onClick={startTapArena} disabled={tapArenaActive}>
+              {tapArenaActive ? `Temps: ${tapArenaTimeLeft}s` : "Démarrer"}
+            </Button>
+          </CardContent>
+        </Card>
       )}
     </div>
-  )
+
+    {/* --- MODALS (Tout à la suite sans fermer le div principal) --- */}
+    <VideoOverlay
+      isOpen={isOverlayOpen}
+      onClose={() => setIsOverlayOpen(false)}
+      onComplete={handleVideoComplete}
+      contextLabel={videoContextLabel}
+      rewardLabel={videoRewardLabel}
+    />
+
+    {showScratchModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <Card className="w-full max-w-sm border-border/60 bg-[#111111] text-white">
+          <CardContent className="p-6 text-center space-y-4">
+            <div className="bg-secondary/30 p-6 rounded-xl border-dashed border text-2xl font-bold">
+              {scratchResult === null ? "BK" : (scratchResult === 0 ? "Perdu" : `+${scratchResult} pts`)}
+            </div>
+            <Button className="w-full" onClick={scratchResult === null ? revealScratch : resetScratch}>
+              {scratchResult === null ? "Gratter" : "Fermer"}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )}
+
+    {showWheelModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <Card className="w-full max-w-sm border-border/60 bg-[#111111] text-white p-6 text-center space-y-4">
+          <h3 className="text-lg font-bold">BK Wheel</h3>
+          <div className="text-xl">{wheelResult === null ? "Prêt ?" : `Résultat: x${wheelResult}`}</div>
+          <Button className="w-full" onClick={spinWheel} disabled={wheelSpinning}>
+            {wheelSpinning ? "Rotation..." : "Tourner la roue"}
+          </Button>
+          <Button variant="outline" className="w-full" onClick={() => setShowWheelModal(false)}>Fermer</Button>
+        </Card>
+      </div>
+    )}
+
+    {infoModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <Card className="w-full max-w-sm border-border/60 bg-[#111111] text-white p-6 text-center">
+          <p>Règlement : Jeux gratuits, points virtuels uniquement.</p>
+          <Button className="mt-4 w-full" onClick={() => setInfoModal(null)}>Fermer</Button>
+        </Card>
+      </div>
+    )}
+  </div>
+);
 }

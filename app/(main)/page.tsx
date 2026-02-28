@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { Suspense } from "react"
 import { DashboardClient } from "@/components/dashboard-client"
 import { SafePage } from "@/components/safe-page"
 import type { Profile, Season } from "@/lib/types"
@@ -33,7 +34,6 @@ export default async function HomePage() {
       season = seasonData
     }
 
-    // Les cadeaux sont maintenant chargés directement dans DashboardClient via useEffect
     // Plus besoin de les charger ici
 
     if (user && user.id) {
@@ -60,13 +60,15 @@ export default async function HomePage() {
 
   return (
     <SafePage>
-      <DashboardClient
-        cadeaux={[]} // Vide car chargé dans DashboardClient
-        isAuthenticated={!!user}
-        userId={user?.id}
-        profile={profile}
-        season={season}
-      />
+      <Suspense fallback={<div>Chargement...</div>}>
+        <DashboardClient
+          isAuthenticated={!!user}
+          userId={user?.id}
+          profile={profile}
+          season={season}
+          showRewardsPools
+        />
+      </Suspense>
     </SafePage>
   )
 }

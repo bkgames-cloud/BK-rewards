@@ -26,6 +26,9 @@ export default function Error({
           Recharger
         </Button>
       </div>
+      {error?.message && (
+        <p className="text-xs text-muted-foreground">{error.message}</p>
+      )}
     </div>
   )
 }

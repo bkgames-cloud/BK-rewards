@@ -7,20 +7,13 @@ export interface Season {
   created_at: string
 }
 
-export interface Ticket {
-  id: string
-  ticket_number: number
-  user_id: string
-  cadeau_id: string
-  created_at: string
-}
-
 export interface RewardPool {
   id: string
   name: string
   target_videos: number
   current_videos: number
   image_url?: string | null
+  ticket_cost?: number | null
 }
 
 export interface Profile {
@@ -30,8 +23,12 @@ export interface Profile {
   points: number
   is_admin: boolean
   is_vip?: boolean
+  is_vip_plus?: boolean
+  vip_tier?: "vip" | "vip_plus" | null
   last_bonus_claim?: string | null
   last_claim_date?: string | null
+  last_vip_plus_claim?: string | null
+  vip_until?: string | null
   vip_expires_at?: string | null
   adresse: string | null
   code_postal: string | null
@@ -40,28 +37,10 @@ export interface Profile {
   referred_by?: string | null
   last_scratch_at?: string | null
   last_wheel_at?: string | null
+  last_vip_slot_at?: string | null
+  vip_video_bonus_toggle?: number | null
   created_at: string
   updated_at: string
 }
 
-export interface Cadeau {
-  id: string
-  nom: string
-  image_url: string | null
-  points_par_ticket: number
-  objectif_tickets: number
-  tickets_total?: number // Support des deux noms de colonnes
-  tickets_actuels: number
-  statut: "en_cours" | "complet" | "envoyé"
-  date_fin: string | null
-  created_at: string
-}
-
-export interface Gagnant {
-  id: string
-  user_id: string
-  cadeau_id: string
-  ticket_id: string | null
-  email: string | null
-  created_at: string
-}
+// Ancien système "cadeaux" supprimé

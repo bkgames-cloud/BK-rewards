@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Home, Gift, User, Trophy, FileText, Award, Bell, Menu } from "lucide-react"
+import { Home, Gift, User, Trophy, FileText, Bell, Menu } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -12,9 +12,7 @@ const navItems = [
   { href: "/", icon: Home, label: "Accueil" },
   { href: "/prizes", icon: Gift, label: "Cadeaux" },
   { href: "/concours", icon: Trophy, label: "Concours" },
-  { href: "/tickets", icon: Trophy, label: "Tickets" },
   { href: "/notifications", icon: Bell, label: "Alertes" },
-  { href: "/gagnants", icon: Award, label: "Gagnants" },
   { href: "/profile", icon: User, label: "Profil" },
   { href: "/reglement", icon: FileText, label: "Règlement" },
 ]

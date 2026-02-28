@@ -1,109 +1,117 @@
-import { createClient } from "@/lib/supabase/server"
-import { redirect } from "next/navigation"
+"use client"
+
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Trophy } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
-export default async function AdminWinnersPage() {
-  const supabase = await createClient()
+type RewardRow = {
+  id: string
+  display_name: string
+  email: string
+  reward_type: string
+  status: "pending" | "sent"
+  created_at: string
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+const rewardLabel = (type: string) => {
+  if (type === "points_500") return "500 points"
+  if (type === "gift_card_10") return "Carte 10€"
+  return type
+}
 
-  if (!user || !user.id) {
-    redirect("/auth/login")
-  }
+export default function AdminWinnersPage() {
+  const [rewards, setRewards] = useState<RewardRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [testingEmail, setTestingEmail] = useState(false)
 
-  let profile = null
-  try {
-    const { data: profileData, error: profileError } = await supabase
-      .from("profiles")
-      .select("is_admin")
-      .eq("id", user.id)
-      .single()
-    
-    if (!profileError) {
-      profile = profileData
+  const fetchRewards = async () => {
+    setLoading(true)
+    const response = await fetch("/api/admin/rewards/list", { cache: "no-store" })
+    if (!response.ok) {
+      setRewards([])
+      setLoading(false)
+      return
     }
-  } catch (error) {
-    console.error("[AdminWinnersPage] Error loading profile:", error)
+    const data = await response.json()
+    setRewards(data.rewards || [])
+    setLoading(false)
   }
 
-  if (!profile?.is_admin) {
-    return (
-      <div className="flex flex-col gap-4 p-4">
-        <h2 className="text-xl font-semibold text-foreground">Administration</h2>
-        <p className="text-sm text-muted-foreground">Accès réservé à l&apos;administration.</p>
-      </div>
-    )
-  }
+  useEffect(() => {
+    fetchRewards()
+  }, [])
 
-  const { data: winners, error: winnersError } = await supabase
-    .from("gagnants")
-    .select("*")
-    .order("created_at", { ascending: false })
-
-  if (winnersError) {
-    console.error("[AdminWinnersPage] Error loading winners:", winnersError)
-  }
-
-  // Get cadeaux info separately to avoid 404 on relation
-  let cadeauxMap: Record<string, { nom: string }> = {}
-  if (winners && winners.length > 0) {
-    const cadeauIds = [...new Set(winners.map((w) => w.cadeau_id).filter(Boolean))]
-    if (cadeauIds.length > 0) {
-      const { data: cadeaux, error: cadeauxError } = await supabase
-        .from("cadeaux")
-        .select("id, nom")
-        .in("id", cadeauIds)
-
-      if (cadeauxError) {
-        console.error("[AdminWinnersPage] Error loading cadeaux:", cadeauxError)
-      } else if (cadeaux) {
-        cadeauxMap = cadeaux.reduce(
-          (acc, c) => {
-            acc[c.id] = { nom: c.nom }
-            return acc
-          },
-          {} as Record<string, { nom: string }>,
-        )
-      }
+  const markSent = async (rewardId: string) => {
+    setUpdatingId(rewardId)
+    const response = await fetch("/api/admin/rewards/mark-sent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rewardId }),
+    })
+    if (response.ok) {
+      await fetchRewards()
     }
+    setUpdatingId(null)
+  }
+
+  const testEmail = async () => {
+    setTestingEmail(true)
+    await fetch("/api/admin/rewards/test-email", { method: "POST" })
+    setTestingEmail(false)
   }
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <h2 className="text-xl font-semibold text-foreground">Gagnants</h2>
-      <p className="text-sm text-muted-foreground">Liste des gagnants et leurs emails.</p>
+      <div>
+        <h2 className="text-xl font-semibold text-foreground">Gains Tap-Tap VIP+</h2>
+        <p className="text-sm text-muted-foreground">
+          Gagnants en attente d&apos;envoi (carte) ou déjà crédités.
+        </p>
+      </div>
+      <Button onClick={testEmail} disabled={testingEmail} className="w-full sm:w-auto">
+        {testingEmail ? "Test en cours..." : "Tester l'envoi email"}
+      </Button>
 
-      {!winners || winners.length === 0 ? (
-        <Card className="border-border bg-card">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
-              <Trophy className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <p className="text-center text-muted-foreground">Aucun gagnant pour le moment.</p>
+      {loading ? (
+        <Card className="border border-border/50 bg-[#1a1a1a] shadow-lg">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Chargement...
           </CardContent>
         </Card>
-      ) : (
+      ) : rewards.length > 0 ? (
         <div className="grid gap-4">
-          {winners.map((winner) => {
-            const cadeau = winner.cadeau_id ? cadeauxMap[winner.cadeau_id] : null
-            return (
-              <Card key={winner.id} className="border-accent bg-card">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg text-foreground">
-                    {cadeau?.nom || "Cadeau"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-1 text-sm text-muted-foreground">
-                  <p>Email : {winner.email || "Non renseigné"}</p>
-                  <p>Gagnant le {new Date(winner.created_at).toLocaleDateString("fr-FR")}</p>
-                </CardContent>
-              </Card>
-            )
-          })}
+          {rewards.map((reward) => (
+            <Card key={reward.id} className="border border-border/50 bg-[#1a1a1a] shadow-lg">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base text-foreground">
+                  {rewardLabel(reward.reward_type)}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm text-muted-foreground">
+                <p>Gagnant : <span className="font-semibold text-foreground">{reward.display_name}</span></p>
+                <p>Email : <span className="font-semibold text-foreground">{reward.email}</span></p>
+                <p>Statut : <span className="font-semibold text-foreground">{reward.status}</span></p>
+                <p>Créé le : {new Date(reward.created_at).toLocaleDateString("fr-FR")}</p>
+                {reward.status === "pending" && (
+                  <Button
+                    className="w-full"
+                    onClick={() => markSent(reward.id)}
+                    disabled={updatingId === reward.id}
+                  >
+                    {updatingId === reward.id ? "Mise à jour..." : "Marquer comme envoyé"}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ))}
         </div>
+      ) : (
+        <Card className="border border-border/50 bg-[#1a1a1a] shadow-lg">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Aucun gain en attente.
+          </CardContent>
+        </Card>
       )}
     </div>
   )

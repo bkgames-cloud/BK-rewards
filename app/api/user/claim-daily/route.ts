@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { createClient as createAdminClient } from "@supabase/supabase-js"
 
 export async function POST() {
   const supabase = await createClient()
@@ -10,9 +11,17 @@ export async function POST() {
     return new Response("Unauthorized", { status: 401 })
   }
 
-  const { data: profile, error } = await supabase
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) {
+    return new Response("Missing env vars", { status: 500 })
+  }
+
+  const admin = createAdminClient(supabaseUrl, serviceRoleKey)
+
+  const { data: profile, error } = await admin
     .from("profiles")
-    .select("is_vip, points, last_claim_date")
+    .select("is_vip, is_vip_plus, points, last_claim_date")
     .eq("id", user.id)
     .single()
 
@@ -20,7 +29,7 @@ export async function POST() {
     return new Response("Profile not found", { status: 404 })
   }
 
-  if (!profile.is_vip) {
+  if (!profile.is_vip && !profile.is_vip_plus) {
     return new Response("Not VIP", { status: 403 })
   }
 
@@ -31,7 +40,7 @@ export async function POST() {
   }
 
   const newPoints = (profile.points || 0) + 10
-  const { error: updateError } = await supabase
+  const { error: updateError } = await admin
     .from("profiles")
     .update({
       points: newPoints,
