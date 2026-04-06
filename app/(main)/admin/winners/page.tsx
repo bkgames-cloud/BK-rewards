@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { createClient as supabaseBrowser } from "@/lib/supabase/client"
 
 type RewardRow = {
   id: string
@@ -27,14 +28,19 @@ export default function AdminWinnersPage() {
 
   const fetchRewards = async () => {
     setLoading(true)
-    const response = await fetch("/api/admin/rewards/list", { cache: "no-store" })
-    if (!response.ok) {
-      setRewards([])
-      setLoading(false)
-      return
-    }
-    const data = await response.json()
-    setRewards(data.rewards || [])
+    const supabase = supabaseBrowser()
+    const { data: rewardsData } = await supabase
+      .from("rewards")
+      .select("id, user_id, reward_type, status, created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+    const rows = (rewardsData || []) as Array<{ id: string; user_id: string; reward_type: string; status: "pending" | "sent"; created_at: string }>
+    const ids = Array.from(new Set(rows.map((r) => r.user_id)))
+    const { data: profiles } = ids.length
+      ? await supabase.from("profiles").select("id, first_name, last_name").in("id", ids)
+      : { data: [] as Array<{ id: string; first_name: string | null; last_name: string | null }> }
+    const nameMap = new Map((profiles || []).map((p) => [p.id, `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Utilisateur"]))
+    setRewards(rows.map((r) => ({ ...r, display_name: nameMap.get(r.user_id) || "Utilisateur", email: "" })))
     setLoading(false)
   }
 
@@ -44,20 +50,15 @@ export default function AdminWinnersPage() {
 
   const markSent = async (rewardId: string) => {
     setUpdatingId(rewardId)
-    const response = await fetch("/api/admin/rewards/mark-sent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rewardId }),
-    })
-    if (response.ok) {
-      await fetchRewards()
-    }
+    const supabase = supabaseBrowser()
+    await supabase.from("rewards").update({ status: "sent" }).eq("id", rewardId)
+    await fetchRewards()
     setUpdatingId(null)
   }
 
   const testEmail = async () => {
     setTestingEmail(true)
-    await fetch("/api/admin/rewards/test-email", { method: "POST" })
+    // Sans backend API, test email non disponible.
     setTestingEmail(false)
   }
 

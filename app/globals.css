@@ -132,13 +132,19 @@
   }
 }
 
-/* Safe area padding for mobile devices */
+/* Safe area : minimum 24px en bas (barre de navigation / gestes Android) + encoches */
 .safe-area-pt {
-  padding-top: env(safe-area-inset-top);
+  padding-top: max(env(safe-area-inset-top, 0px), 0px);
 }
 
 .safe-area-pb {
-  padding-bottom: env(safe-area-inset-bottom);
+  /* ≥28px pour la barre de gestes Android + inset système quand le WebView le fournit */
+  padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
+}
+
+/* Espacement contenu au-dessus de la barre fixe (hauteur nav ~4.5rem + zone sûre) */
+.app-scroll-bottom-pad {
+  padding-bottom: calc(6rem + max(28px, env(safe-area-inset-bottom, 0px)));
 }
 
 .safe-area-pl {

@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BK-Rewards</string>
+    <string name="title_activity_main">BK-Rewards</string>
+    <string name="package_name">com.bkrewards.app</string>
+    <string name="custom_url_scheme">com.bkrewards.app</string>
+    <!--
+      PRODUCTION (swapper la valeur de admob_app_id ci‑dessous après tests + ADMOB_USE_TEST_IDS = false dans lib/admob-rewarded.ts) :
+      ca-app-pub-2044584502893474~6360384667
+    -->
+    <string name="admob_app_id">ca-app-pub-3940256099942544~3347511713</string>
+</resources>

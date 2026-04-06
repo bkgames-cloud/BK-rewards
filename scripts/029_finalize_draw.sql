@@ -1,0 +1,2 @@
+-- DEPRECATED : remplacé par 030_last_draw_at_finalize_draw.sql (signature UUID seule + last_draw_at).
+-- Conserve ce fichier pour historique ; appliquer 030 sur Supabase.

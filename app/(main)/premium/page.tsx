@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast"
 import { notificationService } from "@/lib/notifications"
 import { soundService } from "@/lib/sounds"
 import { Confetti } from "@/components/confetti"
+import { PaymentService } from "@/lib/payment-service"
 
 export default function PremiumPage() {
   const [isVip, setIsVip] = useState(false)
@@ -146,30 +147,30 @@ export default function PremiumPage() {
         return
       }
 
-      const response = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: type }),
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      await PaymentService.subscribe({
+        plan: type,
+        accessToken,
       })
 
-      if (!response.ok) {
+      if (PaymentService.isAndroidNative()) {
         toast({
-          title: "Erreur",
-          description: "Impossible de créer la session de paiement.",
-          variant: "destructive",
+          title: "Merci !",
+          description: "Votre abonnement VIP a été pris en compte.",
         })
-        return
-      }
-
-      const { url } = await response.json()
-      if (url) {
-        window.location.href = url
+        router.refresh()
       }
     } catch (error) {
       console.error("Unexpected error:", error)
+      const msg =
+        error instanceof Error ? error.message : "Une erreur est survenue lors de l'abonnement."
       toast({
         title: "Erreur",
-        description: "Une erreur est survenue lors de l'abonnement.",
+        description: msg,
         variant: "destructive",
       })
     }
@@ -245,23 +246,27 @@ export default function PremiumPage() {
 
   const handleOpenPortal = async () => {
     try {
-      const response = await fetch("/api/stripe/portal", { method: "POST" })
-      if (!response.ok) {
+      const res = await fetch("/api/stripe/portal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ returnPath: "/premium" }),
+      })
+      const data = (await res.json()) as { url?: string }
+      if (!res.ok || !data?.url) {
         toast({
           title: "Erreur",
-          description: "Impossible d'ouvrir le portail Stripe.",
+          description: "Portail Stripe indisponible pour le moment.",
           variant: "destructive",
         })
         return
       }
-      const { url } = await response.json()
-      if (url) {
-        window.location.href = url
-      }
-    } catch {
+      window.location.href = data.url
+    } catch (e) {
+      console.error("[premium] stripe portal:", e)
       toast({
         title: "Erreur",
-        description: "Une erreur est survenue.",
+        description: "Erreur réseau.",
         variant: "destructive",
       })
     }

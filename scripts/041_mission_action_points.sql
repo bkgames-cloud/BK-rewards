@@ -1,0 +1,2 @@
+-- Alias du script prêt à coller : `supabase_mission_actions_paste.sql`
+-- (contenu identique — exécuter l’un ou l’autre dans Supabase SQL Editor.)

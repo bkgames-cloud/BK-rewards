@@ -27,10 +27,15 @@ function SignUpContent() {
 
   // Lire le paramètre ref de l'URL
   useEffect(() => {
-    const ref = searchParams.get("ref")
-    if (ref) {
-      setReferralCode(ref)
+    const ref = searchParams.get("ref")?.trim()
+    if (!ref) return
+
+    if (ref.toUpperCase() === "FLYER" && typeof window !== "undefined") {
+      window.sessionStorage.setItem("pending_referral", "FLYER")
+      return
     }
+
+    setReferralCode(ref)
   }, [searchParams])
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -81,14 +86,28 @@ function SignUpContent() {
 
       if (error) throw error
 
-      // Bonus de parrainage pour le filleul (5 points)
-      if (referrerId && signUpData?.user?.id) {
+      // Bonus d'acquisition (Option B) :
+      // - Filleul: +3 points si code ami valide.
+      // - Parrain reel: credite via la route serveur de parrainage / logiques backend.
+      // - Source FLYER: traitee au premier chargement dashboard via pending_referral.
+      if (signUpData?.user?.id) {
+        let bonusPoints = 0
+        if (referrerId) {
+          bonusPoints += 3
+        }
+
         const { data: profileData } = await supabase
           .from("profiles")
           .select("points")
           .eq("id", signUpData.user.id)
           .maybeSingle()
-        const newPoints = (profileData?.points || 0) + 5
+
+        if (bonusPoints <= 0) {
+          router.push("/auth/sign-up-success")
+          return
+        }
+
+        const newPoints = (profileData?.points || 0) + bonusPoints
         await supabase
           .from("profiles")
           .update({ points: newPoints })

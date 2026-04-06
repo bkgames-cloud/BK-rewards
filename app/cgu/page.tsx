@@ -19,6 +19,10 @@ export default function CGUPage() {
             <p className="text-foreground leading-relaxed">
               Les tirages au sort sont basés sur un seuil de financement publicitaire. Un tirage est officiellement confirmé dès que le nombre de tickets défini (ex: 1 000) est atteint. Si la participation dépasse ce seuil, les tickets excédentaires sont automatiquement reportés sur un second tirage (Lot n°2) du même produit. L'Organisateur se réserve le droit de regrouper les tirages financés en fin de mois calendaire pour une gestion logistique optimale.
             </p>
+            <p className="text-foreground leading-relaxed">
+              Pour des raisons de vérification technique, un délai de 60 minutes est appliqué entre deux
+              tirages sur un même lot.
+            </p>
           </CardContent>
         </Card>
       </div>

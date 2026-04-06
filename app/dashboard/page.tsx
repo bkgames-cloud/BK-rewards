@@ -1,10 +1,10 @@
-import HomePage from "@/app/(main)/page"
 import MainLayout from "@/app/(main)/layout"
+import { DashboardRouteClient } from "@/components/dashboard-route-client"
 
 export default function DashboardPage() {
   return (
     <MainLayout>
-      <HomePage />
+      <DashboardRouteClient />
     </MainLayout>
   )
 }

@@ -68,8 +68,6 @@ class SoundService {
       if (!ready || !this.audioContext) return
 
       try {
-        console.log("🔊 SON DÉCLENCHÉ: Crystal (click)")
-        
         const oscillator = this.audioContext.createOscillator()
         const gainNode = this.audioContext.createGain()
 
@@ -104,8 +102,6 @@ class SoundService {
       if (!ready || !this.audioContext) return
 
       try {
-        console.log("🔊 SON DÉCLENCHÉ: Ding (coin)")
-        
         const oscillator = this.audioContext.createOscillator()
         const gainNode = this.audioContext.createGain()
 
@@ -145,8 +141,6 @@ class SoundService {
       if (!ready || !this.audioContext) return
 
       try {
-        console.log("🔊 SON DÉCLENCHÉ: Success (bip-bip)")
-        
         const now = this.audioContext.currentTime
         const beepDuration = 0.12 // 120ms par bip
         const pauseDuration = 0.06 // 60ms de pause
@@ -253,6 +247,34 @@ class SoundService {
   public toggle(): boolean {
     this.setEnabled(!this.soundsEnabled)
     return this.soundsEnabled
+  }
+
+  /**
+   * App en arrière-plan / inactive (Capacitor `appStateChange` : isActive false).
+   * Coupe tout traitement audio du WebView.
+   */
+  public async onAppBecameInactive(): Promise<void> {
+    if (!this.audioContext || this.audioContext.state === "closed") return
+    try {
+      await this.audioContext.suspend()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
+   * App au premier plan : relance le contexte seulement si l’utilisateur avait laissé les sons activés.
+   */
+  public async onAppBecameActive(): Promise<void> {
+    if (!this.audioContext || this.audioContext.state === "closed") return
+    if (!this.soundsEnabled) return
+    try {
+      if (this.audioContext.state === "suspended") {
+        await this.audioContext.resume()
+      }
+    } catch {
+      /* WebView / politique navigateur */
+    }
   }
 }
 

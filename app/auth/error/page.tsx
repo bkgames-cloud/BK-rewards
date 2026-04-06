@@ -1,14 +1,14 @@
+"use client"
+
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle } from "lucide-react"
 import Link from "next/link"
 
-export default async function AuthErrorPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error: string }>
-}) {
-  const params = await searchParams
+export default function AuthErrorPage() {
+  const searchParams = useSearchParams()
+  const errorParam = searchParams.get("error")
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center bg-background p-4">
@@ -20,8 +20,8 @@ export default async function AuthErrorPage({
           <CardTitle className="text-xl text-foreground">Une erreur est survenue</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {params?.error ? (
-            <p className="text-center text-sm text-muted-foreground">Erreur : {params.error}</p>
+          {errorParam ? (
+            <p className="text-center text-sm text-muted-foreground">Erreur : {errorParam}</p>
           ) : (
             <p className="text-center text-sm text-muted-foreground">Une erreur inattendue s&apos;est produite.</p>
           )}

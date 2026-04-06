@@ -47,40 +47,4 @@ BEGIN
 END;
 $$;
 
--- 5) Fonction pour obtenir la liste des utilisateurs avec leurs emails (pour les admins)
-CREATE OR REPLACE FUNCTION public.get_all_users()
-RETURNS TABLE (
-  id UUID,
-  first_name TEXT,
-  last_name TEXT,
-  email TEXT,
-  points INTEGER,
-  is_vip BOOLEAN,
-  last_bonus_claim TIMESTAMP WITH TIME ZONE,
-  referred_by UUID
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  -- Vérifier que l'utilisateur est admin
-  IF NOT public.is_admin() THEN
-    RAISE EXCEPTION 'not_admin';
-  END IF;
-
-  RETURN QUERY
-  SELECT 
-    p.id,
-    p.first_name,
-    p.last_name,
-    u.email,
-    COALESCE(p.points, 0)::INTEGER as points,
-    COALESCE(p.is_vip, FALSE) as is_vip,
-    p.last_bonus_claim,
-    p.referred_by
-  FROM profiles p
-  LEFT JOIN auth.users u ON u.id = p.id
-  ORDER BY p.created_at DESC;
-END;
-$$;
+-- 5) Lecture des utilisateurs: geree directement depuis profiles en front admin.

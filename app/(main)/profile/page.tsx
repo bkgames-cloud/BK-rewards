@@ -1,35 +1,16 @@
-import { createClient } from "@/lib/supabase/server"
-import { redirect } from "next/navigation"
+"use client"
+
 import { ProfileClient } from "@/components/profile-client"
+import { useAuthContext } from "@/hooks/use-auth-context"
 
-export default async function ProfilePage() {
-  const supabase = await createClient()
+export default function ProfilePage() {
+  const { loading, user, profile } = useAuthContext({
+    requireAuth: true,
+    redirectTo: "/auth/login/",
+  })
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user || !user.id) {
-    redirect("/auth/login")
-  }
-
-  // Get profile - seulement si user.id est défini
-  let profile = null
-  try {
-    const { data: profileData, error: profileError } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single()
-
-    // Ne pas logger l'erreur si c'est juste que le profil n'existe pas encore
-    if (profileError && profileError.code !== "PGRST116") {
-      console.error("[ProfilePage] Error loading profile:", profileError)
-    } else if (profileData) {
-      profile = profileData
-    }
-  } catch (error) {
-    console.error("[ProfilePage] Error:", error)
+  if (loading || !user) {
+    return <div className="p-4 text-sm text-muted-foreground">Chargement...</div>
   }
 
   return <ProfileClient user={user} profile={profile} />

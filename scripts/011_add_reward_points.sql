@@ -1,4 +1,5 @@
--- Secure reward points with daily x2 bonus (first ad view of the day)
+-- Secure reward points (vidéo). Logique à jour : voir `042_video_reward_first_lifetime.sql`
+-- (1ère vidéo lifetime +2, puis +1 ; bonus « 1ère pub du jour » remplacé).
 CREATE OR REPLACE FUNCTION public.add_reward_points()
 RETURNS TABLE (
   new_points INTEGER,

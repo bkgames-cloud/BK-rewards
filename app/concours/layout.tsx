@@ -9,16 +9,16 @@ export default function ConcoursLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supportEmail = "support@bkrewards.com"
+  const supportEmail = "support.bkgamers@gmail.com"
 
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="flex min-h-svh min-h-[100dvh] flex-col">
       <PageLoader />
       <Suspense fallback={<div className="h-14 w-full" />}>
         <Header />
       </Suspense>
-      <main className="flex-1 w-full px-4 pb-20">{children}</main>
-      <div className="px-4 pb-24 space-y-2 text-center text-sm text-muted-foreground">
+      <main className="flex-1 w-full px-4 pb-4">{children}</main>
+      <div className="app-scroll-bottom-pad px-4 space-y-2 text-center text-sm text-muted-foreground">
         <a className="underline underline-offset-4" href={`mailto:${supportEmail}`}>
           Contacter le service client
         </a>

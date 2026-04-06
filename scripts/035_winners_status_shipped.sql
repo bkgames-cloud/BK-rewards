@@ -1,0 +1,3 @@
+-- Valeur de statut pour les gains physiques expédiés (admin « Marquer comme envoyé »).
+-- La colonne public.winners.status est en TEXT ; valeurs usuelles : pending | shipped | sent (legacy).
+-- Aucune contrainte obligatoire : compatibilité avec les anciennes lignes « sent ».

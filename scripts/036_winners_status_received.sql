@@ -1,0 +1,2 @@
+-- Statut « received » : le joueur a confirmé la réception de son lot (page Mes gains).
+-- Colonne public.winners.status TEXT — pas de migration obligatoire si la colonne existe déjà.

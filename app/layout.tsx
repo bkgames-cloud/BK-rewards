@@ -4,15 +4,24 @@ import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Toaster } from "@/components/ui/toaster"
+import { FloatingSoundToggle } from "@/components/floating-sound-toggle"
+import { AdMobInitializer } from "@/components/admob-initializer"
+import { AppStateAudioHandler } from "@/components/app-state-audio"
+import { NativeBackButtonHandler } from "@/components/native-back-handler"
+import { NativeImmersiveInit } from "@/components/native-immersive-init"
+import { NativeWindowOpenShim } from "@/components/native-window-open-shim"
 import "./globals.css"
+import { SITE_PUBLIC_URL } from "@/lib/site-url"
 
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
-export const dynamic = "force-dynamic"
+export const dynamic = "force-static"
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || SITE_PUBLIC_URL,
+  ),
   title: "BKG Rewards - Gagnez des récompenses",
   description: "Rejoignez BK'reward et tentez de gagner des cadeaux gratuitement ! Regardez des publicités et gagnez des iPhone, consoles et cartes cadeaux.",
   generator: "v0.app",
@@ -82,10 +91,16 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
-      <body className="font-sans antialiased">
+      <body className="font-sans antialiased min-h-svh overflow-x-hidden">
+        <NativeBackButtonHandler />
+        <NativeImmersiveInit />
+        <NativeWindowOpenShim />
+        <AdMobInitializer />
+        <AppStateAudioHandler />
         <Suspense fallback={<div className="min-h-svh w-full" />}>
           {children}
         </Suspense>
+        <FloatingSoundToggle />
         <Suspense fallback={null}>
           <Toaster />
         </Suspense>

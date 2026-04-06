@@ -2,23 +2,35 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
+import Link from "next/link"
+import { clearClientAuthStorageAndResetClient, createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Crown, Star, MapPin, LogOut } from "lucide-react"
+import { Crown, Star, MapPin, LogOut, Trash2 } from "lucide-react"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
 import type { Profile } from "@/lib/types"
 import { ReferralQR } from "@/components/referral-qr"
 import { Confetti } from "@/components/confetti"
+import { emailMatchesAdmin } from "@/lib/admin-config"
+import { gradeToFlags, normalizeGrade } from "@/lib/grade"
+import { getApiUrl } from "@/lib/api-origin"
+import { PaymentService } from "@/lib/payment-service"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface ProfileClientProps {
   user: SupabaseUser
   profile: Profile | null
 }
-
-const ADMIN_EMAIL = "bkgamers@icloud.com"
 
 export function ProfileClient({ user, profile }: ProfileClientProps) {
   const [firstName, setFirstName] = useState(profile?.first_name || "")
@@ -27,7 +39,10 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const [codePostal, setCodePostal] = useState(profile?.code_postal || "")
   const [ville, setVille] = useState(profile?.ville || "")
   const [referralCode, setReferralCode] = useState(profile?.referral_code || "")
-  const isAdmin = user?.email === ADMIN_EMAIL
+  const isAdmin = emailMatchesAdmin(user?.email ?? null)
+  const profileEmail =
+    profile?.email && typeof profile.email === "string" ? profile.email.trim() : ""
+  const displayConnectionEmail = profileEmail || user.email?.trim() || ""
   const [sessionUserId, setSessionUserId] = useState<string | null>(null)
   const [isGeneratingReferral, setIsGeneratingReferral] = useState(false)
   const [referredCount, setReferredCount] = useState(0)
@@ -43,14 +58,23 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const [isClaimingBonus, setIsClaimingBonus] = useState(false)
   const [claimMessage, setClaimMessage] = useState<string | null>(null)
   const [showConfetti, setShowConfetti] = useState(false)
+  const [myTickets, setMyTickets] = useState<Array<{ id: string; name: string; created_at: string }>>([])
+  const [sessionLoading, setSessionLoading] = useState(true)
+  const [lastClaimAtLocal, setLastClaimAtLocal] = useState<string | null>(profile?.last_claim_date ?? null)
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false)
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+  const [deleteAccountMessage, setDeleteAccountMessage] = useState<string | null>(null)
 
   const vipUntil = profile?.vip_until ? new Date(profile.vip_until) : null
-  const lastClaimDate = profile?.last_claim_date ? new Date(profile.last_claim_date) : null
+  const lastClaimDate = lastClaimAtLocal ? new Date(lastClaimAtLocal) : null
   const claimedToday =
     lastClaimDate && lastClaimDate.toDateString() === new Date().toDateString()
 
-  const isVip = profile?.is_vip || false
-  const isVipPlus = profile?.is_vip_plus || false
+  const normalizedGrade = normalizeGrade(profile?.grade)
+  const flagsFromGrade = gradeToFlags(normalizedGrade)
+  // Fallback compat (anciennes colonnes), mais on priorise grade.
+  const isVipPlus = flagsFromGrade.isVipPlus || Boolean(profile?.is_vip_plus)
+  const isVip = flagsFromGrade.isVip || Boolean(profile?.is_vip) || isVipPlus
 
   // 1. Fetch initial pour l'ID de session (Sécurité anti-400)
   useEffect(() => {
@@ -58,6 +82,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       const supabase = createClient()
       const { data } = await supabase.auth.getUser()
       setSessionUserId(data?.user?.id || null)
+      setSessionLoading(false)
     }
     fetchSessionUser()
   }, [])
@@ -79,17 +104,71 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     }
     setIsApplyingReferral(true)
     try {
-      const response = await fetch("/api/referral/apply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: referralInput.trim() }),
-      })
-      const payload = await response.json()
-      if (!response.ok) throw new Error(payload.message)
-      setLocalPoints(payload.new_points)
-      setReferralMessage("Code appliqué ! +5 points.")
+      const supabase = createClient()
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser()
+      if (!authUser?.id || authUser.id !== user.id) {
+        setReferralMessage("Session invalide.")
+        return
+      }
+
+      const normalizedCode = referralInput.trim().toUpperCase()
+      const { data: me } = await supabase
+        .from("profiles")
+        .select("id, points, referral_code")
+        .eq("id", user.id)
+        .maybeSingle()
+      if (!me) {
+        setReferralMessage("Profil introuvable.")
+        return
+      }
+
+      if (normalizedCode === "FLYER") {
+        const next = Number(me.points ?? 0) + 3
+        const { error } = await supabase
+          .from("profiles")
+          .update({ points: next, updated_at: new Date().toISOString() })
+          .eq("id", user.id)
+        if (error) throw error
+        setLocalPoints(next)
+        setReferralMessage("Code appliqué ! +3 points.")
+        return
+      }
+
+      const { data: referrer } = await supabase
+        .from("profiles")
+        .select("id, points, referral_code")
+        .eq("referral_code", normalizedCode)
+        .maybeSingle()
+
+      if (!referrer?.id) {
+        setReferralMessage("Code invalide.")
+        return
+      }
+      if (referrer.id === user.id) {
+        setReferralMessage("Auto-parrainage interdit.")
+        return
+      }
+
+      const myNext = Number(me.points ?? 0) + 3
+      const refNext = Number(referrer.points ?? 0) + 5
+
+      const { error: meError } = await supabase
+        .from("profiles")
+        .update({ points: myNext, updated_at: new Date().toISOString() })
+        .eq("id", user.id)
+      if (meError) throw meError
+
+      await supabase
+        .from("profiles")
+        .update({ points: refNext, updated_at: new Date().toISOString() })
+        .eq("id", referrer.id)
+
+      setLocalPoints(myNext)
+      setReferralMessage("Code appliqué ! +3 points.")
     } catch (err: any) {
-      setReferralMessage("Erreur code invalide.")
+      setReferralMessage(err?.message || "Erreur code invalide.")
     } finally {
       setIsApplyingReferral(false)
     }
@@ -97,17 +176,54 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
 
   // 3. Réclamer Bonus → /api/user/claim-daily
   const handleClaimDaily = async () => {
+    if (claimedToday) {
+      setClaimMessage("Déjà réclamé aujourd'hui.")
+      return
+    }
     if (!user?.id) return
     setIsClaimingBonus(true)
     setClaimMessage(null)
     try {
-      const response = await fetch("/api/user/claim-daily", { method: "POST" })
-      if (!response.ok) {
-        setClaimMessage(response.status === 409 ? "Déjà réclamé aujourd'hui." : "Erreur bonus.")
+      const supabase = createClient()
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser()
+      if (!authUser?.id || authUser.id !== user.id) return
+
+      const { data: me } = await supabase
+        .from("profiles")
+        .select("points, is_vip, is_vip_plus, last_claim_date")
+        .eq("id", user.id)
+        .maybeSingle()
+      if (!me) {
+        setClaimMessage("Profil introuvable.")
         return
       }
-      const data = await response.json()
-      setLocalPoints(data.points)
+      if (!me.is_vip && !me.is_vip_plus) {
+        setClaimMessage("Réservé aux membres VIP.")
+        return
+      }
+
+      const now = new Date()
+      const lastClaim = me.last_claim_date ? new Date(me.last_claim_date) : null
+      if (lastClaim && lastClaim.toDateString() === now.toDateString()) {
+        setClaimMessage("Déjà réclamé aujourd'hui.")
+        setLastClaimAtLocal(now.toISOString())
+        return
+      }
+
+      const nextPoints = Number(me.points ?? 0) + 10
+      const { error } = await supabase
+        .from("profiles")
+        .update({ points: nextPoints, last_claim_date: now.toISOString() })
+        .eq("id", user.id)
+      if (error) {
+        setClaimMessage("Erreur bonus.")
+        return
+      }
+
+      setLocalPoints(nextPoints)
+      setLastClaimAtLocal(now.toISOString())
       setClaimMessage("Bonus crédité !")
       setShowConfetti(true)
       setTimeout(() => setShowConfetti(false), 2000)
@@ -120,34 +236,57 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
 
   // 4. Portail Stripe → /api/stripe/portal
   const handleManageSubscription = async () => {
-    try {
-      const response = await fetch("/api/stripe/portal", { method: "POST" })
-      const { url } = await response.json()
-      if (url) window.location.href = url
-      else throw new Error()
-    } catch {
-      alert("Impossible d'accéder au portail client.")
-    }
-  }
-
-  // 5. Checkout Stripe → /api/stripe/checkout
-  const handleCheckout = async (plan: string) => {
     setSubscriptionMessage(null)
     try {
-      const response = await fetch("/api/stripe/checkout", {
+      const res = await fetch(getApiUrl("/api/stripe/portal"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        credentials: "same-origin",
+        body: JSON.stringify({ returnPath: "/profile" }),
       })
-      const data = await response.json()
-      if (data.url) window.location.href = data.url
-      else setSubscriptionMessage(data.error || "Erreur lors de la création de la session.")
-    } catch {
-      setSubscriptionMessage("Erreur de connexion à Stripe.")
+      const data = (await res.json()) as { url?: string; error?: string }
+      if (!res.ok || !data?.url) {
+        setSubscriptionMessage("Portail Stripe indisponible pour le moment.")
+        return
+      }
+      window.location.href = data.url
+    } catch (e) {
+      console.error("[profile] stripe portal:", e)
+      setSubscriptionMessage("Erreur réseau.")
     }
   }
 
-  // 6. Sauvegarde profil
+  // 5. Abonnement : Google Play sur Android natif, Stripe sur le Web (VIP+ reste Stripe partout).
+  const handleCheckout = async (plan: string) => {
+    setSubscriptionMessage(null)
+    if (plan === "vip_plus") {
+      const vipPlus = process.env.NEXT_PUBLIC_STRIPE_VIP_PLUS_LINK
+      if (!vipPlus) {
+        setSubscriptionMessage("Paiement VIP+ indisponible pour le moment.")
+        return
+      }
+      window.location.href = vipPlus
+      return
+    }
+    try {
+      const supabase = createClient()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      await PaymentService.subscribe({
+        plan: plan === "weekly" ? "weekly" : "monthly",
+        accessToken: session?.access_token,
+      })
+      if (PaymentService.isAndroidNative()) {
+        setSubscriptionMessage("Abonnement VIP activé.")
+        router.refresh()
+      }
+    } catch (e) {
+      setSubscriptionMessage(e instanceof Error ? e.message : "Erreur abonnement.")
+    }
+  }
+
+  // 6. Sauvegarde profil (colonnes adresse : adresse, code_postal, ville — voir lib/profile-address.ts)
   const handleSave = async () => {
     if (!user?.id) return
     setIsSaving(true)
@@ -177,10 +316,119 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     router.refresh()
   }
 
+  const handleConfirmDeleteAccount = async () => {
+    setDeleteAccountMessage(null)
+    setIsDeletingAccount(true)
+    try {
+      const supabase = createClient()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch("/api/delete-account", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+      const data = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean }
+      if (!res.ok || !data.ok) {
+        setDeleteAccountMessage(
+          data.error === "non_authentifie"
+            ? "Session expirée. Reconnectez-vous."
+            : "Impossible de supprimer le compte pour le moment.",
+        )
+        return
+      }
+      setDeleteAccountOpen(false)
+      // Session serveur déjà invalidée par l’API — pas de signOut() (évite 403).
+      clearClientAuthStorageAndResetClient()
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("bk_account_deleted", "1")
+      }
+      router.push("/")
+      router.refresh()
+    } catch {
+      setDeleteAccountMessage("Erreur réseau.")
+    } finally {
+      setIsDeletingAccount(false)
+    }
+  }
+
+  useEffect(() => {
+    const fetchMyParticipations = async () => {
+      if (sessionLoading || !user?.id || !sessionUserId || sessionUserId !== user.id) return
+      const supabase = createClient()
+      const { data } = await supabase
+        .from("tickets")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(10)
+      if (!data) {
+        setMyTickets([])
+        return
+      }
+
+      const rows = data as Array<Record<string, unknown>>
+      const ids = Array.from(
+        new Set(
+          rows
+            .map((row) => String((row.pool_id as string | undefined) ?? (row.prize_id as string | undefined) ?? ""))
+            .filter(Boolean),
+        ),
+      )
+      let names = new Map<string, string>()
+      if (ids.length > 0) {
+        const { data: pools } = await supabase.from("rewards_pools").select("id, name").in("id", ids)
+        names = new Map((pools ?? []).map((p: Record<string, unknown>) => [String(p.id), String(p.name ?? "Cadeau")]))
+      }
+
+      setMyTickets(
+        rows.map((row, i) => {
+          const refId = String((row.pool_id as string | undefined) ?? (row.prize_id as string | undefined) ?? "")
+          return {
+            id: String((row.id as string | undefined) ?? `${refId}-${i}`),
+            name: names.get(refId) ?? (refId ? `Lot ${refId.slice(0, 8)}` : "Cadeau"),
+            created_at: String((row.created_at as string | undefined) ?? new Date().toISOString()),
+          }
+        }),
+      )
+    }
+    fetchMyParticipations()
+  }, [user?.id, sessionLoading, sessionUserId])
+
   return (
     <div className="flex flex-col gap-4 p-4 max-w-lg mx-auto">
       {showConfetti && <Confetti duration={2000} particleCount={60} />}
-      <h2 className="text-xl font-semibold text-foreground">Mon Profil</h2>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-xl font-semibold text-foreground">Mon Profil</h2>
+        <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+          {isAdmin ? (
+            <Link
+              href="/admin"
+              className="text-sm font-medium text-amber-400 underline underline-offset-4 hover:text-amber-300"
+            >
+              Administration
+            </Link>
+          ) : null}
+          <Link
+            href="/gains"
+            className="text-sm font-medium text-primary underline underline-offset-4 hover:text-primary/90"
+          >
+            Mes gains
+          </Link>
+        </div>
+      </div>
+
+      {displayConnectionEmail ? (
+        <p className="text-sm text-muted-foreground">
+          E-mail de connexion :{" "}
+          <span className="font-medium text-foreground break-all">{displayConnectionEmail}</span>
+        </p>
+      ) : null}
 
       {/* ═══════════════════ CARTE HEADER ═══════════════════ */}
       <Card className="border border-border/50 bg-gradient-to-br from-blue-600/40 via-indigo-600/30 to-purple-600/40 backdrop-blur-sm shadow-lg overflow-hidden">
@@ -193,14 +441,17 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
               <CardTitle className="text-lg text-foreground">Membre BK Rewards</CardTitle>
               <div className="flex items-center gap-2 mt-0.5">
                 <p className="text-sm text-foreground/80">{firstName || "Utilisateur"}</p>
-                {isVipPlus && (
+                {normalizedGrade === "VIP+" ? (
                   <span className="bg-gradient-to-r from-slate-300/20 to-slate-400/20 text-slate-200 px-2 py-0.5 rounded-full text-[10px] font-bold border border-slate-400/30">
                     VIP+
                   </span>
-                )}
-                {isVip && !isVipPlus && (
+                ) : normalizedGrade === "VIP" ? (
                   <span className="bg-gradient-to-r from-yellow-500/20 to-amber-500/20 text-yellow-400 px-2 py-0.5 rounded-full text-[10px] font-bold border border-yellow-500/30">
                     VIP
+                  </span>
+                ) : (
+                  <span className="bg-gradient-to-r from-emerald-500/15 to-sky-500/10 text-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-bold border border-emerald-500/25">
+                    Gratuit
                   </span>
                 )}
               </div>
@@ -228,10 +479,37 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Input value={adresse} onChange={(e) => setAdresse(e.target.value)} placeholder="Adresse" />
+          <div className="space-y-2">
+            <Label htmlFor="profile-adresse-rue">Rue</Label>
+            <Input
+              id="profile-adresse-rue"
+              value={adresse}
+              onChange={(e) => setAdresse(e.target.value)}
+              placeholder="Numéro et nom de rue"
+              autoComplete="street-address"
+            />
+          </div>
           <div className="flex gap-2">
-            <Input value={codePostal} onChange={(e) => setCodePostal(e.target.value)} placeholder="Code postal" className="w-1/3" />
-            <Input value={ville} onChange={(e) => setVille(e.target.value)} placeholder="Ville" className="flex-1" />
+            <div className="w-1/3 space-y-2">
+              <Label htmlFor="profile-adresse-cp">Code postal</Label>
+              <Input
+                id="profile-adresse-cp"
+                value={codePostal}
+                onChange={(e) => setCodePostal(e.target.value)}
+                placeholder="CP"
+                autoComplete="postal-code"
+              />
+            </div>
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="profile-adresse-ville">Ville</Label>
+              <Input
+                id="profile-adresse-ville"
+                value={ville}
+                onChange={(e) => setVille(e.target.value)}
+                placeholder="Ville"
+                autoComplete="address-level2"
+              />
+            </div>
           </div>
           <Button onClick={handleSave} disabled={isSaving} className="w-full" variant="secondary">
             {isSaving ? "Sauvegarde..." : "Enregistrer les infos"}
@@ -379,6 +657,75 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
           )}
         </CardContent>
       </Card>
+
+      <Card className="border border-border/50 bg-[#1a1a1a]/80 shadow-lg">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Mes Participations</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {myTickets.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Aucun ticket pour le moment.</p>
+          ) : (
+            myTickets.map((ticket) => (
+              <div key={ticket.id} className="flex items-center justify-between rounded-lg border border-border/40 p-2 text-sm">
+                <span className="font-medium text-foreground">{ticket.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {new Date(ticket.created_at).toLocaleDateString("fr-FR")}
+                </span>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ═══════════════════ ZONE DE DANGER ═══════════════════ */}
+      <Card className="border border-destructive/40 bg-destructive/5 shadow-lg">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base text-destructive">Zone de danger</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            La suppression de votre compte est définitive : accès, points et historique seront effacés.
+          </p>
+          {deleteAccountMessage && (
+            <p className="text-xs text-red-400">{deleteAccountMessage}</p>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
+            onClick={() => {
+              setDeleteAccountMessage(null)
+              setDeleteAccountOpen(true)
+            }}
+            disabled={isDeletingAccount}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Supprimer mon compte
+          </Button>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={deleteAccountOpen} onOpenChange={setDeleteAccountOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer le compte ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Êtes-vous sûr ? Cette action est irréversible et vous perdrez tous vos points.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingAccount}>Annuler</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDeleteAccount}
+              disabled={isDeletingAccount}
+            >
+              {isDeletingAccount ? "Suppression…" : "Confirmer la suppression"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ═══════════════════ DÉCONNEXION ═══════════════════ */}
       <Button onClick={handleSignOut} disabled={isLoading} variant="destructive" className="w-full">

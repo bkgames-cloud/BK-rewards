@@ -1,36 +1,49 @@
-import { stripe } from "@/lib/stripe"
-import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { headers } from "next/headers"
+import { createClient } from "@/lib/supabase/server"
+import { stripe } from "@/lib/stripe"
 
-export async function POST() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+type Body = { returnPath?: string }
 
-  if (!user || !user.email) {
-    return NextResponse.json({ error: "Non autorisé" }, { status: 401 })
-  }
-
+export async function POST(req: Request) {
   try {
-    // Rechercher le customer Stripe par email
-    const search = await stripe.customers.search({
-      query: `email:'${user.email}'`,
-      limit: 1,
-    })
-
-    const customer = search.data[0]
-    if (!customer) {
-      return NextResponse.json({ error: "Client Stripe introuvable" }, { status: 404 })
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+    if (authError || !user?.email) {
+      return NextResponse.json({ error: "non_authentifie" }, { status: 401 })
     }
+
+    let body: Body = {}
+    try {
+      body = (await req.json()) as Body
+    } catch {
+      body = {}
+    }
+
+    const origin = (await headers()).get("origin") ?? ""
+    const returnPath = typeof body.returnPath === "string" ? body.returnPath : "/"
+    const returnUrl = origin ? `${origin}${returnPath.startsWith("/") ? returnPath : `/${returnPath}`}` : undefined
+
+    const existing = await stripe.customers.list({ email: user.email, limit: 1 })
+    const customer =
+      existing.data[0] ??
+      (await stripe.customers.create({
+        email: user.email,
+        metadata: { supabase_user_id: user.id },
+      }))
 
     const session = await stripe.billingPortal.sessions.create({
       customer: customer.id,
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/dashboard`,
+      ...(returnUrl ? { return_url: returnUrl } : {}),
     })
+
     return NextResponse.json({ url: session.url })
-  } catch (err) {
-    console.error("[Stripe Portal] Error:", err)
-    return NextResponse.json({ error: "Erreur Stripe" }, { status: 500 })
+  } catch (e) {
+    console.error("[stripe-portal]", e)
+    return NextResponse.json({ error: "serveur" }, { status: 500 })
   }
 }
+

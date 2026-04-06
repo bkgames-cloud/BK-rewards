@@ -1,28 +1,125 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Bell, Trash2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
-  clearInAppNotifications,
-  getInAppNotifications,
+  DB_NOTIFICATIONS_CHANGED_EVENT,
   markAllNotificationsRead,
-  type InAppNotification,
-} from "@/lib/in-app-notifications"
+  type DbNotificationRow,
+} from "@/lib/db-notifications"
+import { createClient, ENABLE_SUPABASE_REALTIME } from "@/lib/supabase/client"
+import type { RealtimeChannel } from "@supabase/supabase-js"
 
 export default function NotificationsPage() {
-  const [items, setItems] = useState<InAppNotification[]>([])
+  const router = useRouter()
+  const [items, setItems] = useState<DbNotificationRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
-    const list = getInAppNotifications()
-    setItems(list)
-    markAllNotificationsRead()
-  }, [])
+    const supabase = createClient()
+    let channel: RealtimeChannel | null = null
+    let cancelled = false
 
-  const handleClear = () => {
-    clearInAppNotifications()
+    const load = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user?.id) {
+        if (!cancelled) {
+          setUserId(null)
+          setItems([])
+          setLoading(false)
+        }
+        return
+      }
+      if (cancelled) return
+      setUserId(user.id)
+
+      const { data, error } = await supabase
+        .from("notifications")
+        .select("id, user_id, title, message, created_at, read")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+
+      if (cancelled) return
+
+      if (error) {
+        console.error("[notifications]", error)
+        setItems([])
+      } else {
+        setItems((data as DbNotificationRow[]) ?? [])
+      }
+
+      await markAllNotificationsRead(supabase, user.id)
+      window.dispatchEvent(new Event(DB_NOTIFICATIONS_CHANGED_EVENT))
+      router.refresh()
+      setLoading(false)
+
+      if (cancelled) return
+
+      if (ENABLE_SUPABASE_REALTIME) {
+        channel = supabase
+          .channel(`notifications-page-${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${user.id}`,
+            },
+            (payload: { new: Record<string, unknown> }) => {
+              const row = payload.new as DbNotificationRow
+              setItems((prev) => {
+                if (prev.some((p) => p.id === row.id)) return prev
+                return [row, ...prev]
+              })
+              void (async () => {
+                await markAllNotificationsRead(supabase, user.id)
+                window.dispatchEvent(new Event(DB_NOTIFICATIONS_CHANGED_EVENT))
+                router.refresh()
+              })()
+            },
+          )
+          .subscribe()
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+      if (channel) void supabase.removeChannel(channel)
+    }
+  }, [router])
+
+  const handleClear = async () => {
+    if (!userId) return
+    const supabase = createClient()
+    const { error } = await supabase.from("notifications").delete().eq("user_id", userId)
+    if (error) {
+      console.error("[notifications] delete", error)
+      return
+    }
     setItems([])
+    window.dispatchEvent(new Event(DB_NOTIFICATIONS_CHANGED_EVENT))
+    router.refresh()
+  }
+
+  const formatDate = (iso: string | null | undefined) => {
+    if (!iso) return ""
+    try {
+      return new Date(iso).toLocaleString("fr-FR", {
+        dateStyle: "short",
+        timeStyle: "short",
+      })
+    } catch {
+      return iso
+    }
   }
 
   return (
@@ -36,26 +133,32 @@ export default function NotificationsPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleClear}
-            disabled={items.length === 0}
+            onClick={() => void handleClear()}
+            disabled={items.length === 0 || !userId}
             className="text-muted-foreground"
           >
             <Trash2 className="mr-2 h-4 w-4" />
-            Effacer
+            Tout effacer
           </Button>
         </CardHeader>
         <CardContent className="space-y-2">
-          {items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Aucune notification pour le moment.
-            </p>
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Chargement…</p>
+          ) : !userId ? (
+            <p className="text-sm text-muted-foreground">Connecte-toi pour voir tes alertes.</p>
+          ) : items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Aucune notification pour le moment.</p>
           ) : (
             items.map((item) => (
               <div
                 key={item.id}
                 className="rounded-lg bg-secondary/40 px-3 py-2 text-sm text-foreground"
               >
-                {item.message}
+                {item.title && (
+                  <p className="font-semibold text-primary">{item.title}</p>
+                )}
+                {item.message && <p className="text-foreground/90">{item.message}</p>}
+                <p className="mt-1 text-xs text-muted-foreground">{formatDate(item.created_at)}</p>
               </div>
             ))
           )}
