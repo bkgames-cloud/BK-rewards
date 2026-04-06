@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/client"
 import type { Profile, Season } from "@/lib/types"
-import { Trophy, Sparkles, Crown, Copy, Play, Target } from "lucide-react"
+import { Trophy, Sparkles, Crown, Copy, Play, Target, ExternalLink } from "lucide-react"
 import { soundService } from "@/lib/sounds"
 import { AnimatedCounter } from "@/components/animated-counter"
 import { Confetti } from "@/components/confetti"
@@ -723,6 +723,11 @@ export function DashboardClient({
   const isFirstMissionEver = (missionCompletionCount ?? 0) === 0
   const showVideoPointsCard = (minimalHome || !isVip) && isAuthenticated
   const androidApkUrl = getAndroidApkDownloadUrl()
+  const monlixOfferUrl =
+    typeof process.env.NEXT_PUBLIC_MONLIX_URL === "string" && process.env.NEXT_PUBLIC_MONLIX_URL.trim() !== ""
+      ? process.env.NEXT_PUBLIC_MONLIX_URL.trim()
+      : "https://www.monlix.com"
+  const webExclusiveOffersUrl = "https://www.bkg-rewards.com"
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -900,6 +905,33 @@ export function DashboardClient({
               </Button>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Offres externes : Monlix + site Vercel (openExternalUrl → @capacitor/browser sur natif). */}
+      {showWallet && isAuthenticated && (
+        <div className="flex w-full max-w-lg flex-col gap-2.5 sm:mx-auto">
+          <Button
+            type="button"
+            className="w-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 text-white shadow-md hover:from-emerald-500/95 hover:to-teal-500/95"
+            onClick={() => void openExternalUrl(monlixOfferUrl)}
+          >
+            Monlix
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full border border-border/60 bg-secondary/85 text-foreground shadow-sm transition-colors hover:bg-secondary"
+            onClick={() => void openExternalUrl(webExclusiveOffersUrl)}
+          >
+            <ExternalLink className="mr-2 h-4 w-4 shrink-0 opacity-80" aria-hidden />
+            Accéder aux offres Web exclusives
+          </Button>
+          <p className="text-center text-[11px] text-muted-foreground">
+            {Capacitor.isNativePlatform()
+              ? "Ouverture via le navigateur intégré (Capacitor Browser)."
+              : "Ouverture dans un nouvel onglet."}
+          </p>
         </div>
       )}
 
