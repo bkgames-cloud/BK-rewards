@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     const packageName =
       typeof body.packageName === "string" && body.packageName.trim()
         ? body.packageName.trim()
-        : process.env.GOOGLE_PLAY_PACKAGE_NAME?.trim() || "com.bkrewards.app"
+        : process.env.GOOGLE_PLAY_PACKAGE_NAME?.trim() || "com.bkrewards.rewards"
     const productId = typeof body.productId === "string" ? body.productId.trim() : ""
     const purchaseToken = typeof body.purchaseToken === "string" ? body.purchaseToken.trim() : ""
 

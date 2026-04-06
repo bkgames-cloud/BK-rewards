@@ -4,10 +4,18 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Info, Lock } from "lucide-react"
 import { motion } from "framer-motion"
 import confetti from "canvas-confetti"
-import { createClient } from "@/lib/supabase/client"
+import { createClient } from "@/lib/supabase/supabase-browser-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { VideoOverlay } from "@/components/video-overlay"
 import { useToast } from "@/hooks/use-toast"
 import { Confetti } from "@/components/confetti"
@@ -84,7 +92,7 @@ export function ConcoursClient() {
   const [wheelResult, setWheelResult] = useState<number | null>(null)
   const [wheelAngle, setWheelAngle] = useState(0)
   const [wheelSpinning, setWheelSpinning] = useState(false)
-  const [showRescueModal, setShowRescueModal] = useState(false)
+  const [showWheelRescueDialog, setShowWheelRescueDialog] = useState(false)
   const [pendingRescueBet, setPendingRescueBet] = useState<number | null>(null)
   const [infoModal, setInfoModal] = useState<"scratch" | "wheel" | null>(null)
   const [slotSpinning, setSlotSpinning] = useState(false)
@@ -102,6 +110,8 @@ export function ConcoursClient() {
   const [tapArenaTimeLeft, setTapArenaTimeLeft] = useState(30)
   const [tapArenaResult, setTapArenaResult] = useState<string | null>(null)
   const [tapLeaderboard, setTapLeaderboard] = useState<LeaderboardEntry[]>([])
+  /** Anti double déblocage Scratch après une seule pub AdMob. */
+  const scratchPostAdHandledRef = useRef(false)
   const tapLastClickRef = useRef<number>(0)
   const tapIntervalRef = useRef<number | null>(null)
   const tapArenaCountRef = useRef<number>(0)
@@ -351,6 +361,8 @@ export function ConcoursClient() {
 
   const handleVideoComplete = async () => {
     if (videoAction === "scratch") {
+      if (scratchPostAdHandledRef.current) return
+      scratchPostAdHandledRef.current = true
       setScratchUnlocked(true)
       setShowScratchModal(true)
       return
@@ -361,7 +373,7 @@ export function ConcoursClient() {
         const ok = await postUpdatePoints({ pointsToAdd: pendingRescueBet })
         if (ok) {
           setPendingRescueBet(null)
-          setShowRescueModal(false)
+          setShowWheelRescueDialog(false)
           await refreshPoints()
           toast({
             title: "Mise récupérée !",
@@ -385,8 +397,9 @@ export function ConcoursClient() {
       return
     }
     if (!scratchAvailable) return
-    setVideoAction("scratch")
+    scratchPostAdHandledRef.current = false
     if (!Capacitor.isNativePlatform()) {
+      setVideoAction("scratch")
       setIsOverlayOpen(true)
       return
     }
@@ -416,6 +429,7 @@ export function ConcoursClient() {
   }
 
   const resetScratch = () => {
+    scratchPostAdHandledRef.current = false
     setScratchUnlocked(false)
     setScratchResult(null)
     setShowScratchModal(false)
@@ -440,6 +454,7 @@ export function ConcoursClient() {
       setWheelAngle(nextWheelAngle)
       
       const roll = Math.random()
+      /** 0 = Perdu ; 1–3 = multiplicateur de gain (x1, x2, x3). */
       const multiplier = roll < 0.5 ? 0 : roll < 0.8 ? 1 : roll < 0.95 ? 2 : 3
 
       setTimeout(async () => {
@@ -447,7 +462,7 @@ export function ConcoursClient() {
         setWheelResult(multiplier)
         if (multiplier === 0) {
           setPendingRescueBet(wheelBet)
-          setShowRescueModal(true)
+          setShowWheelRescueDialog(true)
         } else {
           await postUpdatePoints({ pointsToAdd: wheelBet * multiplier })
           await refreshPoints()
@@ -459,6 +474,9 @@ export function ConcoursClient() {
   }
 
   const runRewardedGate = async (action: "scratch" | "wheel-rescue") => {
+    if (action === "scratch") {
+      scratchPostAdHandledRef.current = false
+    }
     setVideoAction(action)
     setAdGateStatus("Préparation de la vidéo...")
     setAdGateCanRetry(false)
@@ -725,6 +743,9 @@ export function ConcoursClient() {
         /* JEU ACTIF POUR LES VIP+ */
         <Card className="border-blue-500/40 bg-slate-900/50 p-4 shadow-lg shadow-blue-900/20">
           <h3 className="text-blue-100 font-bold text-center">Tap-Tap Arena VIP+</h3>
+          <p className="mt-2 rounded-md border border-blue-500/30 bg-blue-950/40 px-3 py-2 text-center text-[11px] leading-relaxed text-blue-100/90">
+            Saison 1 : Mensuelle. Prix : 5€ au #1.
+          </p>
           {isTapTapSessionClosed && (
             <p className="mt-2 text-center text-sm text-yellow-300">{tapTapClosedMessage}</p>
           )}
@@ -776,6 +797,47 @@ export function ConcoursClient() {
         contextLabel={videoContextLabel}
         rewardLabel={videoRewardLabel}
       />
+
+      <Dialog open={showWheelRescueDialog} onOpenChange={setShowWheelRescueDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Récupérer votre mise ?</DialogTitle>
+            <DialogDescription>Voulez-vous récupérer votre mise ?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setPendingRescueBet(null)
+                setShowWheelRescueDialog(false)
+              }}
+            >
+              Non
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!userId) return
+                setShowWheelRescueDialog(false)
+                const isAndroidApp =
+                  Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android"
+                if (!isAndroidApp) {
+                  toast({
+                    title: "Récupérer la mise",
+                    description:
+                      "La récupération via une vidéo récompensée est disponible sur l’app Android (AdMob).",
+                  })
+                  return
+                }
+                void runRewardedGate("wheel-rescue")
+              }}
+            >
+              Oui, regarder une vidéo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {adGateStatus ? (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4">
@@ -838,7 +900,11 @@ export function ConcoursClient() {
               🎡
             </div>
             <div className="mt-4 font-bold text-yellow-400">
-              {wheelResult !== null ? `Gain: x${wheelResult}` : `Misez ${wheelBet} point${wheelBet > 1 ? "s" : ""}`}
+              {wheelResult !== null
+                ? wheelResult === 0
+                  ? "Perdu"
+                  : `Gain : x${wheelResult}`
+                : `Misez ${wheelBet} point${wheelBet > 1 ? "s" : ""}`}
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {[1, 2, 3].map((bet) => (
@@ -855,23 +921,6 @@ export function ConcoursClient() {
               ))}
             </div>
             <Button className="w-full mt-4 bg-yellow-600 hover:bg-yellow-500" onClick={handleSpinWheel} disabled={wheelSpinning}>Lancer la roue</Button>
-            {pendingRescueBet && wheelResult === 0 ? (
-              <Button
-                className="w-full mt-2"
-                onClick={() => {
-                  if (!userId) return
-                  if (!Capacitor.isNativePlatform()) {
-                    setVideoAction("wheel-rescue")
-                    setIsOverlayOpen(true)
-                    return
-                  }
-                  void runRewardedGate("wheel-rescue")
-                }}
-                disabled={wheelSpinning}
-              >
-                Récupérer ma mise (Vidéo)
-              </Button>
-            ) : null}
             <Button variant="ghost" className="w-full mt-2 text-slate-500" onClick={() => setShowWheelModal(false)}>Fermer</Button>
           </Card>
         </div>

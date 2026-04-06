@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Play, Sparkles } from "lucide-react"
 import { soundService } from "@/lib/sounds"
 import { Confetti } from "@/components/confetti"
@@ -13,16 +13,30 @@ interface VideoOverlayProps {
   rewardLabel?: string
 }
 
-const VIDEO_DURATION = 30 // 30 seconds
+/** Une seule « vidéo » simulée : durée courte + pas de double déclenchement si le parent re-render. */
+const VIDEO_DURATION = 8
 
 export function VideoOverlay({ isOpen, onComplete, onClose, contextLabel, rewardLabel }: VideoOverlayProps) {
   const [progress, setProgress] = useState(0)
   const [canClose, setCanClose] = useState(false)
   const [hasCompleted, setHasCompleted] = useState(false)
   const [showConfetti, setShowConfetti] = useState(false)
+  const onCompleteRef = useRef(onComplete)
+  const onCloseRef = useRef(onClose)
+  const completionFiredRef = useRef(false)
+  onCompleteRef.current = onComplete
+  onCloseRef.current = onClose
+
+  const fireCompleteOnce = useCallback(() => {
+    if (completionFiredRef.current) return
+    completionFiredRef.current = true
+    onCompleteRef.current()
+    onCloseRef.current()
+  }, [])
 
   useEffect(() => {
     if (!isOpen) {
+      completionFiredRef.current = false
       setProgress(0)
       setCanClose(false)
       setHasCompleted(false)
@@ -47,19 +61,16 @@ export function VideoOverlay({ isOpen, onComplete, onClose, contextLabel, reward
   }, [isOpen])
 
   useEffect(() => {
-    if (hasCompleted) {
-      soundService.playSuccess()
-      setShowConfetti(true)
-      const confettiTimer = setTimeout(() => setShowConfetti(false), 2000)
-      const timeout = setTimeout(() => {
-        onComplete()
-      }, 500)
-      return () => {
-        clearTimeout(timeout)
-        clearTimeout(confettiTimer)
-      }
+    if (!hasCompleted) return
+    soundService.playSuccess()
+    setShowConfetti(true)
+    const confettiTimer = setTimeout(() => setShowConfetti(false), 2000)
+    const timeout = setTimeout(fireCompleteOnce, 500)
+    return () => {
+      clearTimeout(timeout)
+      clearTimeout(confettiTimer)
     }
-  }, [hasCompleted, onComplete])
+  }, [hasCompleted, fireCompleteOnce])
 
   if (!isOpen) return null
 
@@ -107,7 +118,10 @@ export function VideoOverlay({ isOpen, onComplete, onClose, contextLabel, reward
         )}
 
         <button
-          onClick={onClose}
+          type="button"
+          onClick={() => {
+            if (canClose) fireCompleteOnce()
+          }}
           disabled={!canClose}
           className={
             canClose
@@ -115,7 +129,7 @@ export function VideoOverlay({ isOpen, onComplete, onClose, contextLabel, reward
               : "w-full rounded-xl bg-muted px-4 py-3 text-sm font-medium text-muted-foreground"
           }
         >
-          {canClose ? "Récupérer mon point" : "Visionnage en cours..."}
+          {canClose ? "Continuer" : "Visionnage en cours..."}
         </button>
       </div>
     </div>

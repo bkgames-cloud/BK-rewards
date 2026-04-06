@@ -12,11 +12,13 @@ import {
 } from "@/lib/admin-config"
 import type { ProfileAddressColumns } from "@/lib/profile-address"
 
-/** Doit correspondre au domaine vérifié sur Resend. */
-const RESEND_FROM = "BK Rewards <support@bkg-rewards.com>"
+/** Expéditeur fixe — domaine vérifié Resend (jamais l’e-mail du visiteur). */
+export const RESEND_FROM_ADDRESS = "support@bkg-rewards.com"
+const RESEND_FROM = `BK Rewards <${RESEND_FROM_ADDRESS}>`
 
 function getResendApiKey(): string | undefined {
-  return process.env.RESEND_API_KEY
+  const k = process.env.RESEND_API_KEY
+  return typeof k === "string" && k.trim() !== "" ? k.trim() : undefined
 }
 
 type LegacyBody = {
@@ -88,44 +90,60 @@ async function sendViaResend(
   to: string | string[],
   subject: string,
   html: string,
+  options?: { replyTo?: string },
 ): Promise<{ ok: boolean; id?: string; err?: string }> {
   const key = getResendApiKey()
   if (!key) {
-    console.error("[send-email] Resend: impossible d’envoyer — configuration email incomplète.")
-    return { ok: false, err: "missing_resend_api_key" }
+    console.error("[send-email] Resend: RESEND_API_KEY absente ou vide (process.env.RESEND_API_KEY).")
+    return {
+      ok: false,
+      err: "missing_resend_api_key: définissez RESEND_API_KEY sur Vercel / l’hôte API.",
+    }
   }
   const toList = Array.isArray(to) ? to : [to]
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      from: RESEND_FROM,
-      to: toList,
-      subject,
-      html,
-    }),
-  })
-  if (!res.ok) {
-    const errText = await res.text()
-    console.error("[send-email] Resend erreur API", {
-      httpStatus: res.status,
-      statusText: res.statusText,
-      resendBody: errText.slice(0, 400),
-      subject,
-    })
-    return { ok: false, err: errText.slice(0, 500) }
+  const payload: Record<string, unknown> = {
+    from: RESEND_FROM,
+    to: toList,
+    subject,
+    html,
   }
-  let parsed: { id?: string } = {}
+  if (options?.replyTo && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(options.replyTo)) {
+    payload.reply_to = options.replyTo
+  }
+
   try {
-    const t = await res.text()
-    if (t) parsed = JSON.parse(t) as { id?: string }
-  } catch (e) {
-    console.warn("[send-email] Réponse Resend non-JSON", e)
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) {
+      const errText = await res.text()
+      console.error("[send-email] Resend erreur API", {
+        httpStatus: res.status,
+        statusText: res.statusText,
+        resendBody: errText.slice(0, 800),
+        subject,
+        from: RESEND_FROM,
+      })
+      return { ok: false, err: `resend_http_${res.status}: ${errText.slice(0, 600)}` }
+    }
+    let parsed: { id?: string } = {}
+    try {
+      const t = await res.text()
+      if (t) parsed = JSON.parse(t) as { id?: string }
+    } catch (e) {
+      console.warn("[send-email] Réponse Resend non-JSON", e)
+    }
+    return { ok: true, id: parsed.id }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error("[send-email] sendViaResend exception (réseau / fetch)", e)
+    return { ok: false, err: `exception: ${msg}` }
   }
-  return { ok: true, id: parsed.id }
 }
 
 /** Envoi e-mail (Resend). `from` = domaine vérifié ; `to` selon le mode. */
@@ -156,15 +174,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: "email_invalide" }, { status: 400 })
       }
 
-      if (!getResendApiKey()) {
-        console.warn("[send-email] Mode support — clé Resend manquante.")
-        return NextResponse.json({
-          ok: true,
-          skipped: true,
-          message: "RESEND_API_KEY non configure — aucun envoi.",
-        })
-      }
-
       const mailSubject = `[SUPPORT] Nouveau message de ${name}`
       const html = `
 <p><strong>Sujet :</strong> ${escapeHtml(subjectLine)}</p>
@@ -173,14 +182,73 @@ export async function POST(request: Request) {
 <p style="white-space:pre-wrap;">${escapeHtml(message)}</p>
 `.trim()
 
-      const r = await sendViaResend(SUPPORT_INBOX_EMAIL, mailSubject, html)
-      if (!r.ok) {
+      let emailSent = false
+      let resendMessageId: string | undefined
+      let resendErr: string | null = null
+
+      const key = getResendApiKey()
+      if (!key) {
+        resendErr =
+          "RESEND_API_KEY manquante ou vide côté serveur (Vercel → Environment Variables)."
+        console.error("[send-email] Support —", resendErr)
+      } else {
+        try {
+          const r = await sendViaResend(SUPPORT_INBOX_EMAIL, mailSubject, html, { replyTo: fromEmail })
+          if (r.ok) {
+            emailSent = true
+            resendMessageId = r.id
+          } else {
+            resendErr = r.err ?? "resend_echec"
+            console.error("[send-email] Échec Resend (support)", {
+              from: RESEND_FROM,
+              to: SUPPORT_INBOX_EMAIL,
+              detail: r.err,
+            })
+          }
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error("[send-email] Support — exception sendViaResend", e)
+          resendErr = msg
+        }
+      }
+
+      const supabase = await createClient()
+      const { data: inserted, error: insertErr } = await supabase
+        .from("support_messages")
+        .insert({
+          full_name: name,
+          email: fromEmail,
+          subject: subjectLine,
+          message,
+          resend_sent: emailSent,
+          resend_error: resendErr,
+        })
+        .select("id")
+        .maybeSingle()
+
+      if (insertErr || !inserted?.id) {
+        console.error("[send-email] Support — insert support_messages:", insertErr)
         return NextResponse.json(
-          { ok: false, error: "resend_echec", detail: r.err?.slice(0, 500) },
-          { status: 502 },
+          {
+            ok: false,
+            error: "sauvegarde_impossible",
+            detail: insertErr?.message ?? "Impossible d’enregistrer le message.",
+          },
+          { status: 500 },
         )
       }
-      return NextResponse.json({ ok: true, id: r.id, mode: "support" })
+
+      return NextResponse.json({
+        ok: true,
+        id: resendMessageId,
+        mode: "support",
+        saved: true,
+        support_message_id: inserted.id,
+        email_sent: emailSent,
+        resend_failed: !emailSent,
+        detail: resendErr ?? undefined,
+        from: RESEND_FROM_ADDRESS,
+      })
     }
 
     const supabase = await createClient()
@@ -412,8 +480,12 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ok: true, id: data.id })
   } catch (e) {
-    console.error("[send-email]", e)
-    return NextResponse.json({ ok: false, error: "serveur" }, { status: 500 })
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error("[send-email] POST exception:", e)
+    return NextResponse.json(
+      { ok: false, error: "serveur", detail: msg },
+      { status: 500 },
+    )
   }
 }
 

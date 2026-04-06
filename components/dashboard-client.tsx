@@ -6,7 +6,7 @@ import { Capacitor } from "@capacitor/core"
 import { SeasonTimer } from "@/components/season-timer"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { createClient } from "@/lib/supabase/client"
+import { createClient } from "@/lib/supabase/supabase-browser-client"
 import type { Profile, Season } from "@/lib/types"
 import { Trophy, Sparkles, Crown, Copy, Play, Target, ExternalLink } from "lucide-react"
 import { soundService } from "@/lib/sounds"
@@ -16,9 +16,9 @@ import { addInAppNotification } from "@/lib/in-app-notifications"
 import { RewardPoolsGrid } from "@/components/reward-pools-grid"
 import { showRewardVideo } from "@/lib/admob-rewarded"
 import { cn } from "@/lib/utils"
-import { getApiUrl } from "@/lib/api-origin"
-import { getAndroidApkDownloadUrl, isMobileWebBrowser } from "@/lib/android-app-promo"
+import { getAndroidApkDownloadUrl } from "@/lib/android-app-promo"
 import { openExternalUrl } from "@/lib/open-external-url"
+import { getMonlixDirectUrl, getMonlixOnSiteUrl } from "@/lib/monlix-urls"
 import {
   Dialog,
   DialogContent,
@@ -59,7 +59,6 @@ export function DashboardClient({
   /** Nombre total de vidéos récompensées (lifetime) — pour affichage +2 / +1. */
   const [videoLifetimeCount, setVideoLifetimeCount] = useState<number | null>(null)
   /** Nombre de réclamations mission (table `mission_action_claims`). */
-  const [missionCompletionCount, setMissionCompletionCount] = useState<number | null>(null)
   const [vipDailyClaimedToday, setVipDailyClaimedToday] = useState(false)
   const [userRewards, setUserRewards] = useState<
     Array<{
@@ -382,7 +381,6 @@ export function DashboardClient({
     async function loadRewardPreviewCounts() {
       if (!hasValidUserId || !isAuthenticated || !userId) {
         setVideoLifetimeCount(null)
-        setMissionCompletionCount(null)
         return
       }
       const supabase = createClient()
@@ -392,38 +390,6 @@ export function DashboardClient({
         .eq("user_id", userId)
       setVideoLifetimeCount(vc ?? 0)
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      const token = session?.access_token
-      const apiUrl = getApiUrl("/api/mission-action-claims")
-      try {
-        const res = await fetch(apiUrl, {
-          method: "GET",
-          credentials: "include",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-        const j = (await res.json().catch(() => ({}))) as {
-          ok?: boolean
-          count?: number
-        }
-        if (res.ok && j.ok && typeof j.count === "number") {
-          setMissionCompletionCount(j.count)
-          return
-        }
-      } catch {
-        /* fallback Supabase */
-      }
-
-      const { count: mc, error: missionErr } = await supabase
-        .from("mission_action_claims")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", userId)
-      if (missionErr) {
-        setMissionCompletionCount(0)
-      } else {
-        setMissionCompletionCount(mc ?? 0)
-      }
     }
     void loadRewardPreviewCounts()
   }, [userId, isAuthenticated, hasValidUserId])
@@ -577,10 +543,6 @@ export function DashboardClient({
     lastAdClickRef.current = now
 
     if (!Capacitor.isNativePlatform()) {
-      setStatusMessage(null)
-      setStatusType(null)
-      setVideoWebPromoKind(isMobileWebBrowser() ? "mobile_web" : "desktop")
-      setVideoWebPromoOpen(true)
       return
     }
 
@@ -619,6 +581,7 @@ export function DashboardClient({
     }
   }, [userId, router, isAuthenticated, rewardUserForVideo])
 
+  /** Web : Monlix direct. App : page Monlix sur bkg-rewards.com (navigateur système / Custom Tabs). */
   const handleMissionAction = useCallback(async () => {
     if (!userId) return
     if (!isAuthenticated) {
@@ -629,76 +592,10 @@ export function DashboardClient({
     setStatusMessage(null)
     setStatusType(null)
     try {
-      const supabase = createClient()
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
-      if (!currentUser || currentUser.id !== userId) {
-        setStatusMessage("Vous devez être connecté.")
-        setStatusType("error")
-        return
-      }
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      const token = session?.access_token
-
-      const applyRow = (row: { new_points?: number; first_action?: boolean } | null) => {
-        if (row?.new_points !== undefined) {
-          setPoints(row.new_points)
-        }
-        setMissionCompletionCount((c) => (c == null ? 1 : c + 1))
-        setStatusMessage(
-          row?.first_action ? "+5 points — bonus 1ère action !" : "+3 points ajoutés au wallet.",
-        )
-        setStatusType("success")
-        addInAppNotification("Points mission !")
-        soundService.playCoinSound()
-        if (!Capacitor.isNativePlatform()) {
-          router.refresh()
-        }
-      }
-
-      const apiUrl = getApiUrl("/api/mission-action-claims")
-      try {
-        const res = await fetch(apiUrl, {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: "{}",
-        })
-        const j = (await res.json().catch(() => ({}))) as {
-          ok?: boolean
-          new_points?: number
-          first_action?: boolean
-          detail?: string
-        }
-        if (res.ok && j.ok) {
-          applyRow({ new_points: j.new_points, first_action: j.first_action })
-          return
-        }
-      } catch {
-        /* fallback RPC */
-      }
-
-      const { data, error } = await supabase.rpc("add_mission_action_points").single()
-      if (error) {
-        const msg =
-          error.code === "PGRST202" || error.message?.includes("add_mission_action_points")
-            ? "Missions indisponibles : exécute scripts/supabase_mission_actions_paste.sql sur Supabase."
-            : error.message || "Action impossible pour le moment."
-        setStatusMessage(msg)
-        setStatusType("error")
-        return
-      }
-      const row = data as { new_points?: number; first_action?: boolean } | null
-      applyRow(row)
+      const url = Capacitor.isNativePlatform() ? getMonlixOnSiteUrl() : getMonlixDirectUrl()
+      await openExternalUrl(url)
     } catch (e) {
-      setStatusMessage(e instanceof Error ? e.message : "Erreur mission.")
+      setStatusMessage(e instanceof Error ? e.message : "Impossible d’ouvrir Monlix.")
       setStatusType("error")
     } finally {
       setIsMissionRewarding(false)
@@ -720,14 +617,15 @@ export function DashboardClient({
   // Ancien système de participation aux cadeaux supprimé
 
   const isFirstVideoEver = (videoLifetimeCount ?? 0) === 0
-  const isFirstMissionEver = (missionCompletionCount ?? 0) === 0
   const showVideoPointsCard = (minimalHome || !isVip) && isAuthenticated
   const androidApkUrl = getAndroidApkDownloadUrl()
-  const monlixOfferUrl =
-    typeof process.env.NEXT_PUBLIC_MONLIX_URL === "string" && process.env.NEXT_PUBLIC_MONLIX_URL.trim() !== ""
-      ? process.env.NEXT_PUBLIC_MONLIX_URL.trim()
-      : "https://www.monlix.com"
+  const androidAppLandingUrl =
+    androidApkUrl.trim() !== "" ? androidApkUrl : "https://www.bkg-rewards.com"
+  const monlixOfferUrl = getMonlixDirectUrl()
   const webExclusiveOffersUrl = "https://www.bkg-rewards.com"
+  const isNativeApp = Capacitor.isNativePlatform()
+  const monlixCardOrder = !isNativeApp ? "order-1 sm:order-1" : "order-2 sm:order-2"
+  const videoCardOrder = !isNativeApp ? "order-2 sm:order-2" : "order-1 sm:order-1"
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -822,7 +720,12 @@ export function DashboardClient({
           )}
         >
           {showVideoPointsCard && (
-            <Card className="border border-sky-500/35 bg-gradient-to-br from-sky-950/70 via-card to-card shadow-lg">
+            <Card
+              className={cn(
+                "border border-sky-500/35 bg-gradient-to-br from-sky-950/70 via-card to-card shadow-lg",
+                videoCardOrder,
+              )}
+            >
               <CardContent className="flex flex-col gap-3 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -832,31 +735,56 @@ export function DashboardClient({
                     <div className="min-w-0">
                       <h3 className="font-semibold leading-tight text-foreground">Regarder une Vidéo</h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {isFirstVideoEver
-                          ? "Bonus : +2 points pour la 1ère vidéo !"
-                          : "Chaque vidéo complétée rapporte +1 point."}
+                        {isNativeApp ? (
+                          isFirstVideoEver ? (
+                            "Bonus : +2 points pour la 1ère vidéo !"
+                          ) : (
+                            "Chaque vidéo complétée rapporte +1 point."
+                          )
+                        ) : (
+                          "Les vidéos récompensées (AdMob) sont disponibles sur l&apos;application Android."
+                        )}
                       </p>
                     </div>
                   </div>
-                  <span className="shrink-0 rounded-full bg-sky-500/25 px-2.5 py-1 text-xs font-bold text-sky-100">
-                    {isFirstVideoEver ? "+2 pts" : "+1 pt"}
-                  </span>
+                  {isNativeApp ? (
+                    <span className="shrink-0 rounded-full bg-sky-500/25 px-2.5 py-1 text-xs font-bold text-sky-100">
+                      {isFirstVideoEver ? "+2 pts" : "+1 pt"}
+                    </span>
+                  ) : null}
                 </div>
-                <Button
-                  type="button"
-                  onClick={() => void handleWatchRewardedAd()}
-                  disabled={!isAuthenticated || isRewarding || isShowingRewardedAd}
-                  className="w-full bg-gradient-to-r from-(--color-sky-start) to-(--color-sky-end) text-primary-foreground"
-                >
-                  {isShowingRewardedAd ? "Chargement..." : minimalHome ? "Lancer la vidéo" : "Regarder une vidéo"}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Pubs restantes :{" "}
-                  <span className="font-medium text-foreground">{Math.max(0, 25 - adsUsedToday)}</span>
-                  /25 aujourd&apos;hui •{" "}
-                  <span className="font-medium text-foreground">{Math.max(0, 5 - adsUsedThisHour)}</span>
-                  /5 cette heure
-                </p>
+                {isNativeApp ? (
+                  <>
+                    <Button
+                      type="button"
+                      onClick={() => void handleWatchRewardedAd()}
+                      disabled={!isAuthenticated || isRewarding || isShowingRewardedAd}
+                      className="w-full bg-gradient-to-r from-(--color-sky-start) to-(--color-sky-end) text-primary-foreground"
+                    >
+                      {isShowingRewardedAd
+                        ? "Chargement..."
+                        : minimalHome
+                          ? "Lancer la vidéo"
+                          : "Regarder une vidéo"}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Pubs restantes :{" "}
+                      <span className="font-medium text-foreground">{Math.max(0, 25 - adsUsedToday)}</span>
+                      /25 aujourd&apos;hui •{" "}
+                      <span className="font-medium text-foreground">{Math.max(0, 5 - adsUsedThisHour)}</span>
+                      /5 cette heure
+                    </p>
+                  </>
+                ) : (
+                  <Button
+                    asChild
+                    className="w-full bg-gradient-to-r from-(--color-sky-start) to-(--color-sky-end) text-primary-foreground"
+                  >
+                    <a href={androidAppLandingUrl} target="_blank" rel="noopener noreferrer">
+                      Disponible sur l&apos;app Android
+                    </a>
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}
@@ -865,6 +793,7 @@ export function DashboardClient({
             className={cn(
               "border border-violet-500/35 bg-gradient-to-br from-violet-950/60 via-card to-card shadow-lg",
               !showVideoPointsCard && "sm:col-span-1 sm:max-w-lg sm:mx-auto w-full",
+              monlixCardOrder,
             )}
           >
             <CardContent className="flex flex-col gap-3 p-4">
@@ -874,19 +803,16 @@ export function DashboardClient({
                     <Target className="h-5 w-5" strokeWidth={2.5} />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-semibold leading-tight text-foreground">Compléter une Action</h3>
+                    <h3 className="font-semibold leading-tight text-foreground">Actions (Revenus élevés)</h3>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {isFirstMissionEver
-                        ? "Bonus : +5 points pour la 1ère action !"
-                        : "+3 points par action complétée."}
-                    </p>
-                    <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground/85">
-                      Règle côté serveur : 1ère validation +5 pts, puis +3 pts (non modifiable côté app).
+                      {isNativeApp
+                        ? "Page Monlix sur bkg-rewards.com — ouverture dans le navigateur (Chrome Custom Tabs / Safari)."
+                        : "Priorité : offres Monlix partenaires (accès direct)."}
                     </p>
                   </div>
                 </div>
                 <span className="shrink-0 rounded-full bg-violet-500/25 px-2.5 py-1 text-xs font-bold text-violet-100">
-                  {isFirstMissionEver ? "+5 pts" : "+3 pts"}
+                  Monlix
                 </span>
               </div>
               <Button
@@ -895,13 +821,9 @@ export function DashboardClient({
                 onClick={() => void handleMissionAction()}
                 disabled={isMissionRewarding}
                 className="w-full border border-violet-500/40 bg-violet-500/15 text-foreground hover:bg-violet-500/25"
-                aria-label={
-                  isFirstMissionEver
-                    ? "Valider une action — bonus première fois cinq points"
-                    : "Valider une action — trois points"
-                }
+                aria-label="Ouvrir les offres Monlix"
               >
-                {isMissionRewarding ? "Validation…" : "Valider une action"}
+                {isMissionRewarding ? "Ouverture…" : isNativeApp ? "Ouvrir Monlix (site BK)" : "Monlix — offres"}
               </Button>
             </CardContent>
           </Card>

@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { LifeBuoy } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
+import { logSupportResendFailure } from "@/lib/support-resend-log"
+import { getSupportFallbackEmail } from "@/lib/support-fallback-email"
 import { Spinner } from "@/components/ui/spinner"
 
 export default function SupportPage() {
@@ -46,44 +48,129 @@ export default function SupportPage() {
         }),
       })
 
-      if (res.ok) {
-        const data = (await res.json().catch(() => null)) as { ok?: boolean } | null
-        if (data && data.ok === false) {
-          setError("Envoi impossible. Réessaie dans un instant.")
-          return
+      type SendEmailJson = {
+        ok?: boolean
+        skipped?: boolean
+        saved?: boolean
+        email_sent?: boolean
+        resend_failed?: boolean
+        error?: string
+        detail?: string
+      }
+      const rawText = await res.text()
+      let data: SendEmailJson | null = null
+      try {
+        if (rawText) data = JSON.parse(rawText) as SendEmailJson
+      } catch {
+        data = null
+      }
+
+      const buildErrMsg = (): string | null => {
+        if (!data) return null
+        const parts = [data.error, data.detail].filter(
+          (x): x is string => typeof x === "string" && x.trim().length > 0,
+        )
+        return parts.length ? parts.join(" — ") : null
+      }
+
+      const isSuccess =
+        res.ok && data?.ok === true && data?.skipped !== true
+
+      if (isSuccess) {
+        if (data.resend_failed || data.email_sent === false) {
+          const fallback = getSupportFallbackEmail()
+          window.alert(
+            `Ton message a bien été enregistré, mais l’envoi par e-mail (Resend) a échoué. Écris-nous en secours à : ${fallback}`,
+          )
+          logSupportResendFailure({
+            httpStatus: res.status,
+            httpStatusText: res.statusText,
+            error: "resend_failed_after_save",
+            detail: data.detail,
+            rawResponseBody: rawText || undefined,
+          })
+        } else {
+          toast({
+            title: "Message envoyé",
+            description:
+              "Message envoyé ! Nous te répondrons sur support.bkgamers@gmail.com",
+          })
         }
-      } else {
-        // Export statique / app native sans route API : repli sur la table Supabase.
+        setSuccess(true)
+        setName("")
+        setEmail("")
+        setSubject("")
+        setMessage("")
+        return
+      }
+
+      const precise = buildErrMsg()
+      if (precise) {
+        logSupportResendFailure({
+          httpStatus: res.status,
+          httpStatusText: res.statusText,
+          error: data?.error,
+          detail: data?.detail,
+          rawResponseBody: rawText || undefined,
+        })
+        setError("Échec d’envoi — le détail exact est dans la console de l’app (Resend).")
+        return
+      }
+
+      // Pas de détail JSON : export statique / route absente → repli Supabase uniquement si 404.
+      if (!res.ok && res.status === 404) {
         const supabase = createClient()
-        const { error: insErr } = await supabase.from("support_tickets").insert({
+        const { error: insErr } = await supabase.from("support_messages").insert({
           full_name: trimmed.name,
           email: trimmed.email,
           subject: trimmed.subject,
           message: trimmed.message,
+          resend_sent: false,
+          resend_error: "api_route_404_fallback",
         })
         if (insErr) {
-          console.error("[support] send-email + fallback support_tickets:", {
+          logSupportResendFailure({
             httpStatus: res.status,
-            insert: insErr,
+            httpStatusText: res.statusText,
+            error: "support_tickets_insert",
+            detail: insErr.message,
+            rawResponseBody: rawText || undefined,
           })
-          setError("Envoi impossible. Réessaie dans un instant.")
+          setError("Enregistrement local impossible — voir la console.")
           return
         }
+        setSuccess(true)
+        toast({
+          title: "Message enregistré",
+          description: "Ton message a été enregistré. Nous te recontacterons bientôt.",
+        })
+        setName("")
+        setEmail("")
+        setSubject("")
+        setMessage("")
+        return
       }
 
-      setSuccess(true)
-      toast({
-        title: "Message envoyé",
-        description:
-          "Message envoyé ! Nous te répondrons sur support.bkgamers@gmail.com",
+      logSupportResendFailure({
+        httpStatus: res.status,
+        httpStatusText: res.statusText,
+        error: data?.error,
+        detail:
+          !res.ok
+            ? `Erreur HTTP sans détail JSON (${res.statusText || "sans détail"}).`
+            : "Réponse serveur inattendue (envoi non confirmé).",
+        rawResponseBody: rawText || undefined,
       })
-      setName("")
-      setEmail("")
-      setSubject("")
-      setMessage("")
+      setError("Échec — détail dans la console (Resend).")
     } catch (e) {
-      console.error("[support] submit catch:", e)
-      setError("Envoi impossible. Réessaie dans un instant.")
+      const msg =
+        e instanceof Error ? e.message : "Envoi impossible (réseau ou exception)."
+      logSupportResendFailure({
+        httpStatus: 0,
+        error: "exception_client",
+        detail: msg,
+      })
+      setError("Erreur — voir la console.")
     } finally {
       setSubmitting(false)
     }

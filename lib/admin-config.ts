@@ -24,3 +24,6 @@ export const ADMIN_NOTIFY_EMAIL = ADMIN_INBOX_EMAIL
 
 /** Formulaire Support — boîte dédiée (support client). */
 export const SUPPORT_INBOX_EMAIL = "support.bkgamers@gmail.com"
+
+/** E-mail de secours affiché si Resend échoue (côté client : NEXT_PUBLIC_SUPPORT_FALLBACK_EMAIL). */
+export const SUPPORT_FALLBACK_EMAIL = SUPPORT_INBOX_EMAIL

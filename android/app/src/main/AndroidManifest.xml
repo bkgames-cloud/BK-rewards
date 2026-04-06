@@ -35,6 +35,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="bkg-rewards.com" />
             </intent-filter>
+            <!-- Deep link Web → app (ex. com.bkrewards.rewards://earn-points) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.bkrewards.rewards" />
+            </intent-filter>
         </activity>
 
         <provider

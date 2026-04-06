@@ -6,7 +6,7 @@ import type { CapacitorConfig } from "@capacitor/cli"
  * Ne pas définir `server.url` en prod : sinon le WebView chargerait le site distant au lieu du bundle.
  */
 const config = {
-  appId: "com.bkrewards.app",
+  appId: "com.bkrewards.rewards",
   appName: "BK-Rewards",
   webDir: "out",
   bundledWebRuntime: false,

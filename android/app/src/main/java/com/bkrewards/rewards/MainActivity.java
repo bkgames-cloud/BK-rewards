@@ -1,4 +1,4 @@
-package com.bkrewards.app;
+package com.bkrewards.rewards;
 
 import android.os.Build;
 import android.os.Bundle;

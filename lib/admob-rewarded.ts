@@ -95,16 +95,20 @@ export async function showRewardVideo(options: {
 
   const handles: PluginListenerHandle[] = []
   let pointsCredited = false
+  /** Verrou synchrone anti double déclenchement (Rewarded + rewardItem, ou événements du SDK). */
+  let grantLock = false
   /** Message d’erreur du callback (string pour éviter les soucis d’inférence TS sur les closures async). */
   let grantErrorMessage: string | null = null
 
   const grantOnce = async () => {
-    if (pointsCredited) return
+    if (grantLock || pointsCredited) return
+    grantLock = true
     pointsCredited = true
     try {
       await options.onRewardGranted()
     } catch (e: unknown) {
       pointsCredited = false
+      grantLock = false
       grantErrorMessage =
         e instanceof Error ? e.message : typeof e === "string" ? e : String(e)
     }

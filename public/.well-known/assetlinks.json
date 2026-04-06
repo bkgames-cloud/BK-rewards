@@ -3,7 +3,7 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "com.bkrewards.app",
+      "package_name": "com.bkrewards.rewards",
       "sha256_cert_fingerprints": [
         "REMPLACEZ_PAR_LEMPREINTE_SHA256_RELEASE_PLAY_CONSOLE"
       ]
