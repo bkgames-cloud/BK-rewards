@@ -6,7 +6,7 @@ import { Capacitor } from "@capacitor/core"
 import { SeasonTimer } from "@/components/season-timer"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { createClient } from "@/lib/supabase/supabase-browser-client"
+import { createClient } from "@/lib/supabase/client"
 import type { Profile, Season } from "@/lib/types"
 import { Trophy, Sparkles, Crown, Copy, Play, Target, ExternalLink } from "lucide-react"
 import { soundService } from "@/lib/sounds"
@@ -18,7 +18,8 @@ import { showRewardVideo } from "@/lib/admob-rewarded"
 import { cn } from "@/lib/utils"
 import { getAndroidApkDownloadUrl } from "@/lib/android-app-promo"
 import { openExternalUrl } from "@/lib/open-external-url"
-import { getMonlixDirectUrl, getMonlixOnSiteUrl } from "@/lib/monlix-urls"
+import { openInAppBrowser } from "@/lib/in-app-browser"
+import { getMonlixDirectUrl } from "@/lib/monlix-urls"
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
+/** Monlix sur le site BK — même URL pour le bouton Actions et le navigateur in-app (Capacitor Browser). */
+const ACTIONS_SPECIAL_OFFERS_URL = "https://bkg-rewards.com/monlix"
 
 interface DashboardClientProps {
   isAuthenticated: boolean
@@ -581,7 +584,7 @@ export function DashboardClient({
     }
   }, [userId, router, isAuthenticated, rewardUserForVideo])
 
-  /** Web : Monlix direct. App : page Monlix sur bkg-rewards.com (navigateur système / Custom Tabs). */
+  /** Web : Monlix direct. App : même URL que le bouton Actions — fenêtre @capacitor/browser (retour facile). */
   const handleMissionAction = useCallback(async () => {
     if (!userId) return
     if (!isAuthenticated) {
@@ -592,8 +595,8 @@ export function DashboardClient({
     setStatusMessage(null)
     setStatusType(null)
     try {
-      const url = Capacitor.isNativePlatform() ? getMonlixOnSiteUrl() : getMonlixDirectUrl()
-      await openExternalUrl(url)
+      const url = Capacitor.isNativePlatform() ? ACTIONS_SPECIAL_OFFERS_URL : getMonlixDirectUrl()
+      await openInAppBrowser(url)
     } catch (e) {
       setStatusMessage(e instanceof Error ? e.message : "Impossible d’ouvrir Monlix.")
       setStatusType("error")
@@ -713,6 +716,16 @@ export function DashboardClient({
       )}
 
       {showWallet && isAuthenticated && (
+        <Button
+          type="button"
+          className="w-full bg-gradient-to-r from-orange-600 to-amber-500 py-6 text-base font-bold text-white shadow-lg hover:from-orange-500 hover:to-amber-400"
+          onClick={() => void openInAppBrowser(ACTIONS_SPECIAL_OFFERS_URL)}
+        >
+          🔥 Actions (Offres Spéciales)
+        </Button>
+      )}
+
+      {showWallet && isAuthenticated && (
         <div
           className={cn(
             "grid gap-3",
@@ -806,7 +819,7 @@ export function DashboardClient({
                     <h3 className="font-semibold leading-tight text-foreground">Actions (Revenus élevés)</h3>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {isNativeApp
-                        ? "Page Monlix sur bkg-rewards.com — ouverture dans le navigateur (Chrome Custom Tabs / Safari)."
+                        ? "Ouverture dans une fenêtre intégrée — ferme pour revenir dans BK’Rewards."
                         : "Priorité : offres Monlix partenaires (accès direct)."}
                     </p>
                   </div>
@@ -830,13 +843,13 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Offres externes : Monlix + site Vercel (openExternalUrl → @capacitor/browser sur natif). */}
+      {/* Offres : Monlix + site (openInAppBrowser → @capacitor/browser sur natif). */}
       {showWallet && isAuthenticated && (
         <div className="flex w-full max-w-lg flex-col gap-2.5 sm:mx-auto">
           <Button
             type="button"
             className="w-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 text-white shadow-md hover:from-emerald-500/95 hover:to-teal-500/95"
-            onClick={() => void openExternalUrl(monlixOfferUrl)}
+            onClick={() => void openInAppBrowser(monlixOfferUrl)}
           >
             Monlix
           </Button>
@@ -844,14 +857,14 @@ export function DashboardClient({
             type="button"
             variant="secondary"
             className="w-full border border-border/60 bg-secondary/85 text-foreground shadow-sm transition-colors hover:bg-secondary"
-            onClick={() => void openExternalUrl(webExclusiveOffersUrl)}
+            onClick={() => void openInAppBrowser(webExclusiveOffersUrl)}
           >
             <ExternalLink className="mr-2 h-4 w-4 shrink-0 opacity-80" aria-hidden />
             Accéder aux offres Web exclusives
           </Button>
           <p className="text-center text-[11px] text-muted-foreground">
             {Capacitor.isNativePlatform()
-              ? "Ouverture via le navigateur intégré (Capacitor Browser)."
+              ? "Fenêtre intégrée (Capacitor Browser) — retour à l’app en fermant."
               : "Ouverture dans un nouvel onglet."}
           </p>
         </div>

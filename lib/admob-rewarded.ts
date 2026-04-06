@@ -148,11 +148,8 @@ export async function showRewardVideo(options: {
 
     const rewardItem = await AdMob.showRewardVideoAd()
     console.log("[admob] rewarded: showRewardVideoAd() resolved", { rewardItem })
-    if (
-      !pointsCredited &&
-      rewardItem != null &&
-      typeof (rewardItem as { amount?: number }).amount === "number"
-    ) {
+    /** Une seule récompense validée suffit (évite d’exiger 2 événements / un `amount` numérique). */
+    if (!pointsCredited && rewardItem != null) {
       await grantOnce()
     }
 

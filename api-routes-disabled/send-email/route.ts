@@ -48,6 +48,8 @@ type SupportBody = {
   email?: string
   subject?: string
   message?: string
+  /** Ligne déjà insérée côté client (`createClient`) — pas de doublon d’INSERT serveur. */
+  support_message_id?: string
 }
 
 type ReceiptConfirmedBody = {
@@ -182,6 +184,38 @@ export async function POST(request: Request) {
 <p style="white-space:pre-wrap;">${escapeHtml(message)}</p>
 `.trim()
 
+      const supabase = await createClient()
+      const UUID_RE =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      const clientRowId =
+        typeof body.support_message_id === "string" && UUID_RE.test(body.support_message_id.trim())
+          ? body.support_message_id.trim()
+          : ""
+
+      let rowId: string | null = clientRowId || null
+      let insertErrMsg: string | null = null
+
+      if (!rowId) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from("support_messages")
+          .insert({
+            full_name: name,
+            email: fromEmail,
+            subject: subjectLine,
+            message,
+            resend_sent: false,
+            resend_error: null,
+          })
+          .select("id")
+          .maybeSingle()
+        if (insertErr || !inserted?.id) {
+          insertErrMsg = insertErr?.message ?? "insert_support_messages"
+          console.error("[send-email] Support — insert (repli serveur) :", insertErr)
+        } else {
+          rowId = inserted.id
+        }
+      }
+
       let emailSent = false
       let resendMessageId: string | undefined
       let resendErr: string | null = null
@@ -212,27 +246,27 @@ export async function POST(request: Request) {
         }
       }
 
-      const supabase = await createClient()
-      const { data: inserted, error: insertErr } = await supabase
-        .from("support_messages")
-        .insert({
-          full_name: name,
-          email: fromEmail,
-          subject: subjectLine,
-          message,
-          resend_sent: emailSent,
-          resend_error: resendErr,
-        })
-        .select("id")
-        .maybeSingle()
+      if (rowId) {
+        const { error: upErr } = await supabase
+          .from("support_messages")
+          .update({
+            resend_sent: emailSent,
+            resend_error: resendErr,
+          })
+          .eq("id", rowId)
+        if (upErr) {
+          console.error("[send-email] Support — update resend sur support_messages:", upErr)
+        }
+      }
 
-      if (insertErr || !inserted?.id) {
-        console.error("[send-email] Support — insert support_messages:", insertErr)
+      const saved = Boolean(rowId)
+      const partialOk = saved || emailSent
+      if (!partialOk) {
         return NextResponse.json(
           {
             ok: false,
-            error: "sauvegarde_impossible",
-            detail: insertErr?.message ?? "Impossible d’enregistrer le message.",
+            error: "sauvegarde_et_email_impossibles",
+            detail: insertErrMsg ?? resendErr ?? "Aucune sauvegarde ni e-mail.",
           },
           { status: 500 },
         )
@@ -242,11 +276,12 @@ export async function POST(request: Request) {
         ok: true,
         id: resendMessageId,
         mode: "support",
-        saved: true,
-        support_message_id: inserted.id,
+        saved,
+        support_message_id: rowId ?? undefined,
         email_sent: emailSent,
         resend_failed: !emailSent,
-        detail: resendErr ?? undefined,
+        insert_failed: !saved && Boolean(insertErrMsg),
+        detail: resendErr ?? insertErrMsg ?? undefined,
         from: RESEND_FROM_ADDRESS,
       })
     }

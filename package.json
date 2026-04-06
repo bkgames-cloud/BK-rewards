@@ -5,6 +5,7 @@
   "scripts": {
     "build": "next build",
     "build:mobile": "CAPACITOR_BUILD=1 NEXT_PUBLIC_APP_URL=https://bkg-rewards.com NEXT_PUBLIC_SITE_URL=https://bkg-rewards.com next build",
+    "build:capacitor": "npm run build:mobile",
     "android:sync": "npx cap sync android",
     "android:open": "npx cap open android",
     "android:prepare": "npm run build:mobile && npx cap sync android",

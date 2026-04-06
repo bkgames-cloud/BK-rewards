@@ -14,6 +14,7 @@ import { notificationService } from "@/lib/notifications"
 import { soundService } from "@/lib/sounds"
 import { Confetti } from "@/components/confetti"
 import { PaymentService } from "@/lib/payment-service"
+import { getApiUrl } from "@/lib/api-origin"
 
 export default function PremiumPage() {
   const [isVip, setIsVip] = useState(false)
@@ -246,7 +247,7 @@ export default function PremiumPage() {
 
   const handleOpenPortal = async () => {
     try {
-      const res = await fetch("/api/stripe/portal", {
+      const res = await fetch(getApiUrl("/api/stripe/portal"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",

@@ -98,6 +98,8 @@ Deno.serve(async () => {
       .eq("id", winner.user_id)
   }
 
+  // Après cet INSERT, le trigger SQL `trg_history_leaderboard_admin_notify` (voir scripts/047_admin_notifications_tap_tap.sql)
+  // crée une ligne dans `admin_notifications` pour l’admin.
   await supabase.from("history_leaderboard").insert({
     user_id: winner.user_id,
     display_name: displayName,

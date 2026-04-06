@@ -10,9 +10,14 @@ console.log(
   process.env.NODE_ENV,
   "| CAPACITOR_BUILD:",
   process.env.CAPACITOR_BUILD ?? "(unset)",
-  "| static export:",
+  "| static export → dossier out/:",
   useCapacitorStaticExport,
 )
+if (!useCapacitorStaticExport) {
+  console.log(
+    "[next.config] Sans CAPACITOR_BUILD=1, Next génère uniquement .next/ (pas d’export statique). Pour régénérer out/ (Capacitor), lance : npm run build:mobile",
+  )
+}
 
 const nextConfig = {
   ...(useCapacitorStaticExport

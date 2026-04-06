@@ -325,7 +325,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
         data: { session },
       } = await supabase.auth.getSession()
       const token = session?.access_token
-      const res = await fetch("/api/delete-account", {
+      const res = await fetch(getApiUrl("/api/delete-account"), {
         method: "POST",
         credentials: "include",
         headers: {
