@@ -5,7 +5,7 @@ export function getMonlixDirectUrl(): string {
 }
 
 /**
- * Page Monlix / offres sur le site BK (app Android : navigateur in-app).
+ * Page Monlix / offres sur le site BKG Rewards (app Android : navigateur in-app).
  * À surcharger si tu exposes une route dédiée (ex. /offres-monlix).
  */
 export function getMonlixOnSiteUrl(): string {

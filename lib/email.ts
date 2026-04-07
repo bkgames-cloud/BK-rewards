@@ -16,7 +16,7 @@ export function onPrizeComplete(
   lastName?: string | null,
 ) {
   // Log the prize completion details
-  console.log(`[BK'REWARDS] Prize completed!`)
+  console.log(`[BKG REWARDS] Prize completed!`)
   console.log(`Prize: ${prizeName}`)
   console.log(`Admin Email: ${adminEmail}`)
   console.log(`Ticket Number: #${ticketNumber}`)
@@ -27,7 +27,7 @@ export function onPrizeComplete(
   //
   // await sendEmail({
   //   to: adminEmail,
-  //   subject: `[Bk'Rewards] Nouveau ticket généré - ${prizeName}`,
+  //   subject: `[BKG Rewards] Nouveau ticket généré - ${prizeName}`,
   //   body: `
   //     Un nouveau ticket a été généré pour le lot "${prizeName}".
   //
