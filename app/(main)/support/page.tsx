@@ -73,13 +73,13 @@ export default function SupportPage() {
       setSubject("")
       setMessage("")
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Envoi impossible (réseau ou exception)."
+      const msg = e instanceof Error ? e.message : "Envoi impossible."
       logSupportResendFailure({
         httpStatus: 0,
         error: "exception_client",
         detail: msg,
       })
-      setError("Erreur — voir la console.")
+      setError("Erreur — vérifie ta connexion puis réessaie.")
     } finally {
       setSubmitting(false)
     }

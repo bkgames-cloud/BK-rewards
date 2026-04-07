@@ -466,7 +466,9 @@ export function DashboardClient({
 
     const { data, error } = await supabase.rpc("add_reward_points").single()
     if (error) {
-      console.error("[DashboardClient] reward_ad_view error:", error)
+      if (process.env.NODE_ENV !== "production") {
+        console.error("[DashboardClient] reward_ad_view error:", error)
+      }
       return {
         ok: false,
         message:
@@ -573,7 +575,9 @@ export function DashboardClient({
       setStatusMessage(null)
       setStatusType(null)
     } catch (error) {
-      console.error("[DashboardClient] rewarded ad error:", error)
+      if (process.env.NODE_ENV !== "production") {
+        console.error("[DashboardClient] rewarded ad error:", error)
+      }
       setStatusMessage(
         error instanceof Error ? error.message : "Pub non disponible, réessaie plus tard.",
       )
