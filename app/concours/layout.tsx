@@ -22,7 +22,7 @@ export default function ConcoursLayout({
         <a className="underline underline-offset-4" href={`mailto:${supportEmail}`}>
           Contacter le service client
         </a>
-        <p className="text-xs">Propulsé par BK&apos;reward</p>
+        <p className="text-xs">Propulsé par BKG Rewards</p>
         <p className="text-xs">
           BKG Rewards est une plateforme indépendante. Les marques citées appartiennent à leurs propriétaires
           respectifs et ne sont pas affiliées à ce service.

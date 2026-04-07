@@ -22,22 +22,22 @@ export default function AboutPage() {
             <Sparkles className="h-6 w-6 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-            BK&apos;reward
+            BKG Rewards
           </h1>
         </div>
 
         <Card className="w-full max-w-2xl border-border bg-card">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl text-foreground">À propos de BK&apos;reward</CardTitle>
+            <CardTitle className="text-2xl text-foreground">À propos de BKG Rewards</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4 text-foreground">
               <p className="text-lg leading-relaxed">
-                Salut ! Je suis BK, le créateur de cette plateforme.
+                Salut ! Je suis le créateur de cette plateforme.
               </p>
               
               <div className="space-y-3">
-                <h3 className="text-xl font-semibold text-foreground">Pourquoi j&apos;ai lancé BK&apos;reward ?</h3>
+                <h3 className="text-xl font-semibold text-foreground">Pourquoi j&apos;ai lancé BKG Rewards ?</h3>
                 <p className="leading-relaxed text-muted-foreground">
                   Parce que je trouvais ça injuste que les grandes plateformes profitent de votre attention sans jamais rien vous rendre en retour.
                 </p>
@@ -46,7 +46,7 @@ export default function AboutPage() {
               <div className="space-y-3">
                 <h3 className="text-xl font-semibold text-foreground">Mon concept est simple :</h3>
                 <p className="leading-relaxed text-muted-foreground">
-                  Vous donnez quelques secondes de votre temps pour regarder une publicité, et en échange, je redistribue les revenus sous forme de cadeaux réels (iPhone, consoles, cartes cadeaux). C&apos;est un contrat gagnant-gagnant. Plus la communauté BK&apos;reward grandit, plus les lots deviennent énormes !
+                  Vous donnez quelques secondes de votre temps pour regarder une publicité, et en échange, je redistribue les revenus sous forme de cadeaux réels (iPhone, consoles, cartes cadeaux). C&apos;est un contrat gagnant-gagnant. Plus la communauté BKG Rewards grandit, plus les lots deviennent énormes !
                 </p>
               </div>
 

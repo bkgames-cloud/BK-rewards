@@ -139,7 +139,7 @@ export function ReferralQR({ referralCode, referredCount = 0 }: ReferralQRProps)
       </div>
       
       <p className="text-sm text-muted-foreground">
-        Rejoins-moi sur BK&apos;reward et tente de gagner des cadeaux ! Voici mon code :{" "}
+        Rejoins-moi sur BKG Rewards et tente de gagner des cadeaux ! Voici mon code :{" "}
         <span className="font-bold text-foreground">{localReferralCode}</span>
       </p>
       <div className="rounded-xl border border-border/60 bg-secondary/30 p-4 text-center">

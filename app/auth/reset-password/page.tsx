@@ -80,7 +80,7 @@ function ResetPasswordContent() {
             <Sparkles className="h-6 w-6 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-            BK&apos;reward
+            BKG Rewards
           </h1>
         </div>
 

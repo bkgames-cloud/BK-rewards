@@ -29,7 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-/** Monlix sur le site BK — même URL pour le bouton Actions et le navigateur in-app (Capacitor Browser). */
+/** Monlix sur le site BKG Rewards — même URL pour le bouton Actions et le navigateur in-app (Capacitor Browser). */
 const ACTIONS_SPECIAL_OFFERS_URL = "https://bkg-rewards.com/monlix"
 
 interface DashboardClientProps {
@@ -823,7 +823,7 @@ export function DashboardClient({
                     <h3 className="font-semibold leading-tight text-foreground">Actions (Revenus élevés)</h3>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {isNativeApp
-                        ? "Ouverture dans une fenêtre intégrée — ferme pour revenir dans BK’Rewards."
+                        ? "Ouverture dans une fenêtre intégrée — ferme pour revenir dans BKG Rewards."
                         : "Priorité : offres Monlix partenaires (accès direct)."}
                     </p>
                   </div>
@@ -840,7 +840,7 @@ export function DashboardClient({
                 className="w-full border border-violet-500/40 bg-violet-500/15 text-foreground hover:bg-violet-500/25"
                 aria-label="Ouvrir les offres Monlix"
               >
-                {isMissionRewarding ? "Ouverture…" : isNativeApp ? "Ouvrir Monlix (site BK)" : "Monlix — offres"}
+                {isMissionRewarding ? "Ouverture…" : isNativeApp ? "Ouvrir Monlix (site BKG Rewards)" : "Monlix — offres"}
               </Button>
             </CardContent>
           </Card>

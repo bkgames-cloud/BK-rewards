@@ -21,10 +21,10 @@ export function PageLoader() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
       <div className="relative">
-        {/* Initiales BK avec effet de brillance */}
+        {/* Initiales BKG avec effet de brillance */}
         <div className="relative">
           <div className="text-6xl font-bold text-foreground tracking-tighter" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-            BK
+            BKG
           </div>
           {/* Effet de brillance animé */}
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer-bk" />

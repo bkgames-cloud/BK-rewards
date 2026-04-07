@@ -34,7 +34,7 @@ export function Header() {
             <Sparkles className="h-5 w-5 text-primary-foreground" />
           </div>
           <h1 className="text-xl font-bold text-foreground tracking-tight" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-            BK&apos;reward
+            BKG Rewards
           </h1>
         </Link>
         <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors">

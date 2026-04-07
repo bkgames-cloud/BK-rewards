@@ -112,7 +112,7 @@ export function VideoOverlay({ isOpen, onComplete, onClose, contextLabel, reward
           <div className="flex flex-col items-center gap-2 text-accent">
             <div className="flex items-center gap-2 text-sm font-semibold animate-bounce">
               <Sparkles className="h-4 w-4" />
-              {rewardLabel || "+1 Point BK accumulé !"}
+              {rewardLabel || "+1 Point BKG Rewards accumulé !"}
             </div>
           </div>
         )}

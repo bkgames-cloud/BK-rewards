@@ -629,7 +629,7 @@ export function ConcoursClient() {
   }
 
   // --- 4. GESTION DES REFS ---
-  const videoContextLabel = videoAction === "scratch" ? "BK Scratch" : "BK Wheel"
+  const videoContextLabel = videoAction === "scratch" ? "BKG Scratch" : "BKG Wheel"
   const videoRewardLabel = videoAction === "scratch" ? "Jeu débloqué" : "Récupérer la mise"
 
   if (loading) return <div className="p-4 text-white">Chargement...</div>
@@ -675,7 +675,7 @@ export function ConcoursClient() {
       <div className="grid gap-4 lg:grid-cols-2">
         {/* CARTE SCRATCH */}
         <Card className="border border-border/50 bg-[#1a1a1a] p-4">
-          <h3 className="text-lg font-bold">BK Scratch</h3>
+          <h3 className="text-lg font-bold">BKG Scratch</h3>
           <p className="text-sm text-muted-foreground mb-4">Disponibilité : {scratchRemaining}</p>
           <Button className="w-full" onClick={openScratchUnlock} disabled={!scratchAvailable || !userId}>
             {scratchAvailable ? "Gratter (Vidéo)" : "Revenez plus tard"}
@@ -684,7 +684,7 @@ export function ConcoursClient() {
 
         {/* CARTE WHEEL */}
         <Card className="border border-border/50 bg-[#1a1a1a] p-4">
-          <h3 className="text-lg font-bold">BK Wheel</h3>
+          <h3 className="text-lg font-bold">BKG Wheel</h3>
           <p className="text-sm text-muted-foreground mb-4">Points : {userPoints}</p>
           <p className="text-sm text-muted-foreground mb-4">Disponibilité : {wheelRemaining}</p>
           <Button className="w-full" onClick={() => setShowWheelModal(true)} disabled={!wheelAvailable || !userId}>
@@ -896,7 +896,7 @@ export function ConcoursClient() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
           <Card className="w-full max-w-sm p-6 text-center space-y-4 bg-[#111111] border-border/60">
             <div className="text-2xl font-bold p-6 bg-secondary/30 rounded-xl border-dashed border-2">
-              {scratchResult === null ? "BK" : (scratchResult === 0 ? "Perdu" : `+${scratchResult} pts`)}
+              {scratchResult === null ? "BKG" : (scratchResult === 0 ? "Perdu" : `+${scratchResult} pts`)}
             </div>
             <Button className="w-full" onClick={scratchResult === null ? revealScratch : resetScratch}>
               {scratchResult === null ? "Révéler" : "Fermer"}
@@ -908,7 +908,7 @@ export function ConcoursClient() {
       {showWheelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
           <Card className="w-full max-w-sm p-6 text-center bg-[#111111] text-white border-border/60">
-            <h3 className="text-xl font-bold mb-4 font-mono uppercase tracking-tighter text-yellow-500">BK Wheel</h3>
+            <h3 className="text-xl font-bold mb-4 font-mono uppercase tracking-tighter text-yellow-500">BKG Wheel</h3>
             <div
               className="h-32 flex items-center justify-center text-5xl"
               style={{
