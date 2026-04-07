@@ -33,7 +33,7 @@ export default function MainLayout({
             Confidentialite
           </Link>
         </div>
-        <p className="text-xs">Propulsé par BK&apos;reward</p>
+        <p className="text-xs">Propulsé par BKG Rewards</p>
         <p className="text-xs">
           BKG Rewards est une plateforme indépendante. Les marques citées appartiennent à leurs propriétaires
           respectifs et ne sont pas affiliées à ce service.

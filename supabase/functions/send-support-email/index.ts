@@ -26,7 +26,7 @@ type WebhookPayload = {
 }
 
 const SUPPORT_TO = "support.bkgamers@gmail.com"
-const RESEND_FROM = "BK Rewards <support@bkg-rewards.com>"
+const RESEND_FROM = "BKG Rewards <support@bkg-rewards.com>"
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

@@ -14,7 +14,7 @@ export function logSupportResendFailure(context: {
   rawResponseBody?: string
 }): void {
   const lines = [
-    "========== BK Rewards · Support · Resend ==========",
+    "========== BKG Rewards · Support · Resend ==========",
     `HTTP ${context.httpStatus}${context.httpStatusText ? ` ${context.httpStatusText}` : ""}`,
     ...(context.error ? [`error (code app): ${context.error}`] : []),
     ...(context.detail ? [`detail (réponse API / message Resend): ${context.detail}`] : []),

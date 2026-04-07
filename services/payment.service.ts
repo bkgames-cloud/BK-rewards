@@ -1,7 +1,7 @@
 import { App } from "@capacitor/app"
 import { Capacitor } from "@capacitor/core"
-import { getApiUrl } from "@/lib/api-origin"
-import { ANDROID_PACKAGE_NAME, GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID } from "@/lib/payment-constants"
+import { ANDROID_PACKAGE_NAME, GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID, GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID } from "@/lib/payment-constants"
+import { createClient } from "@/lib/supabase/client"
 
 /**
  * Paiements hybrides (Web / Android natif)
@@ -86,18 +86,35 @@ export async function buyVIP(accessToken: string | null | undefined): Promise<vo
   await purchaseAndroidSubscription(GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID, accessToken)
 }
 
+/** Abonnement VIP+ mensuel : Google Play sur Android ; Stripe sur le Web (si configuré). */
+export async function buyVIPPlus(accessToken: string | null | undefined): Promise<void> {
+  if (!isAndroidNative()) {
+    const vipPlus = process.env.NEXT_PUBLIC_STRIPE_VIP_PLUS_LINK
+    if (!vipPlus) {
+      throw new Error("Paiement VIP+ indisponible (NEXT_PUBLIC_STRIPE_VIP_PLUS_LINK manquant).")
+    }
+    window.location.href = vipPlus
+    return
+  }
+  await purchaseAndroidSubscription(GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID, accessToken)
+}
+
 export class PaymentService {
   static isAndroidNative(): boolean {
     return isAndroidNative()
   }
 
   static async subscribe(params: {
-    plan: SubscribePlan
+    plan: SubscribePlan | "vip_plus_monthly"
     accessToken: string | null | undefined
   }): Promise<void> {
     const { plan, accessToken } = params
 
     if (isAndroidNative()) {
+      if (plan === "vip_plus_monthly") {
+        await buyVIPPlus(accessToken)
+        return
+      }
       if (plan === "monthly") {
         await buyVIP(accessToken)
         return
@@ -189,22 +206,20 @@ async function purchaseAndroidSubscription(
           throw new Error("Jeton d’achat Google manquant.")
         }
 
-        const res = await fetch(getApiUrl("/api/verify-google-purchase"), {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
+        const supabase = createClient()
+        const { data: fnRes, error: fnErr } = await supabase.functions.invoke("verify-google-purchase", {
+          body: {
             packageName: ANDROID_PACKAGE_NAME,
             productId,
             purchaseToken,
-          }),
+          },
         })
-        const j = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean }
-        if (!res.ok || !j.ok) {
-          throw new Error(j.error || "Échec de la validation serveur.")
+        if (fnErr) {
+          throw new Error(fnErr.message || "Échec de la validation serveur.")
+        }
+        if (!fnRes || (fnRes as { ok?: boolean; error?: string }).ok !== true) {
+          const errMsg = (fnRes as { error?: string } | null)?.error || "Échec de la validation serveur."
+          throw new Error(errMsg)
         }
         await transaction.finish()
         done(() => resolve())

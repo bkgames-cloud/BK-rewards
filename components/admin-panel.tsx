@@ -754,7 +754,7 @@ export function AdminPanel() {
         credentials: "same-origin",
         body: JSON.stringify({
           to,
-          subject: "[BK Rewards] Test d'envoi email",
+          subject: "[BKG Rewards] Test d'envoi email",
           html: "<p>L'envoi d'email est operationnel (tunnel Resend).</p>",
         }),
       })

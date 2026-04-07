@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || SITE_PUBLIC_URL,
   ),
   title: "BKG Rewards - Gagnez des récompenses",
-  description: "Rejoignez BK'reward et tentez de gagner des cadeaux gratuitement ! Regardez des publicités et gagnez des iPhone, consoles et cartes cadeaux.",
+  description: "Rejoignez BKG Rewards et tentez de gagner des cadeaux gratuitement ! Regardez des publicités et gagnez des iPhone, consoles et cartes cadeaux.",
   generator: "v0.app",
   manifest: "/manifest.json",
   appleWebApp: {
@@ -50,14 +50,14 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "BKG Rewards - Gagnez des récompenses",
-    description: "Rejoignez BK'reward et tentez de gagner des cadeaux gratuitement ! Regardez des publicités et gagnez des iPhone, consoles et cartes cadeaux.",
+    description: "Rejoignez BKG Rewards et tentez de gagner des cadeaux gratuitement ! Regardez des publicités et gagnez des iPhone, consoles et cartes cadeaux.",
     siteName: "BKG Rewards",
     images: [
       {
         url: "/og-image.png", // Vous devrez créer cette image
         width: 1200,
         height: 630,
-        alt: "BK'reward - Gagnez des lots gratuitement",
+        alt: "BKG Rewards - Gagnez des lots gratuitement",
       },
     ],
     locale: "fr_FR",
@@ -66,7 +66,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "BKG Rewards - Gagnez des récompenses",
-    description: "Rejoignez BK'reward et tentez de gagner des cadeaux gratuitement !",
+    description: "Rejoignez BKG Rewards et tentez de gagner des cadeaux gratuitement !",
     images: ["/og-image.png"],
   },
 }

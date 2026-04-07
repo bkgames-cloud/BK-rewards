@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
     const displayName = String(row.winner_name || "Un gagnant").trim() || "Un gagnant"
     const prize = String(row.prize_name || "Lot").trim() || "Lot"
 
-    const mailSubject = `[BK Rewards] Réception confirmée — ${prize}`
+    const mailSubject = `[BKG Rewards] Réception confirmée — ${prize}`
     const html = `<p>Bonne nouvelle ! ${displayName} a confirmé la réception de son lot <strong>${prize}</strong>.</p>`
 
     const r = await fetch("https://api.resend.com/emails", {
@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "BK Rewards <support@bkg-rewards.com>",
+        from: "BKG Rewards <support@bkg-rewards.com>",
         to: ["support.bkgamers@gmail.com"],
         subject: mailSubject,
         html,

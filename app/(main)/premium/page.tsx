@@ -322,7 +322,7 @@ export default function PremiumPage() {
         // Programmer une notification pour dans 24 heures
         if (notificationService.hasPermission()) {
           notificationService.scheduleNotification(
-            "🎁 Ton bonus quotidien de 10 points est prêt ! Viens le récupérer.",
+            "🎁 Ton bonus quotidien VIP est prêt ! Viens le récupérer.",
             24 * 60 * 60 * 1000, // 24 heures en millisecondes
             {
               body: "N'oublie pas de réclamer ton bonus VIP quotidien !",

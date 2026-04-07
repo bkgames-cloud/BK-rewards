@@ -298,7 +298,7 @@ export function BottomNav() {
                 </BottomNavLink>
               ))}
               <a
-                href={`mailto:${SUPPORT_INBOX_EMAIL}?subject=${encodeURIComponent("Support BK Rewards")}`}
+                href={`mailto:${SUPPORT_INBOX_EMAIL}?subject=${encodeURIComponent("Support BKG Rewards")}`}
                 className="col-span-2 flex items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-3 text-sm font-medium text-primary"
                 onClick={() => setMenuOpen(false)}
               >

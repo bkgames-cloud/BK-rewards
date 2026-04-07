@@ -709,7 +709,7 @@ export function DashboardClient({
         <h2 className="text-lg font-semibold text-foreground">
           {isAuthenticated
             ? `Bienvenue${profile?.first_name ? `, ${profile.first_name}` : ""} !`
-            : "Bienvenue sur Bk'Rewards !"}
+            : "Bienvenue sur BKG Rewards !"}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {isAuthenticated

@@ -42,7 +42,7 @@ function json(body: unknown, status = 200) {
   })
 }
 
-const RESEND_FROM = "BK Rewards <support@bkg-rewards.com>"
+const RESEND_FROM = "BKG Rewards <support@bkg-rewards.com>"
 const RESEND_TO = "support.bkgamers@gmail.com"
 
 async function sendViaResend(subject: string, html: string) {

@@ -190,43 +190,38 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       } = await supabase.auth.getUser()
       if (!authUser?.id || authUser.id !== user.id) return
 
-      const { data: me } = await supabase
-        .from("profiles")
-        .select("points, is_vip, is_vip_plus, last_claim_date")
-        .eq("id", user.id)
-        .maybeSingle()
-      if (!me) {
-        setClaimMessage("Profil introuvable.")
-        return
-      }
-      if (!me.is_vip && !me.is_vip_plus) {
-        setClaimMessage("Réservé aux membres VIP.")
-        return
-      }
-
-      const now = new Date()
-      const lastClaim = me.last_claim_date ? new Date(me.last_claim_date) : null
-      if (lastClaim && lastClaim.toDateString() === now.toDateString()) {
-        setClaimMessage("Déjà réclamé aujourd'hui.")
-        setLastClaimAtLocal(now.toISOString())
-        return
-      }
-
-      const nextPoints = Number(me.points ?? 0) + 10
-      const { error } = await supabase
-        .from("profiles")
-        .update({ points: nextPoints, last_claim_date: now.toISOString() })
-        .eq("id", user.id)
+      const { data, error } = await supabase.rpc("claim_vip_bonus")
       if (error) {
-        setClaimMessage("Erreur bonus.")
+        const msg = error.message || ""
+        setClaimMessage(
+          msg.includes("already_claimed_today")
+            ? "Déjà réclamé aujourd'hui."
+            : msg.includes("subscription_inactive")
+              ? "Abonnement inactif : bonus indisponible."
+              : msg.includes("not_authenticated")
+                ? "Connexion requise."
+                : "Erreur bonus.",
+        )
+        return
+      }
+      const row = Array.isArray(data) ? (data[0] as any) : null
+      if (!row?.success) {
+        setClaimMessage(row?.message === "already_claimed_today" ? "Déjà réclamé aujourd'hui." : "Erreur bonus.")
         return
       }
 
-      setLocalPoints(nextPoints)
-      setLastClaimAtLocal(now.toISOString())
-      setClaimMessage("Bonus crédité !")
+      const granted = Number(row.tickets_granted ?? 0)
+      setClaimMessage(`Bonus crédité ! +${granted} points`)
+      setLastClaimAtLocal(new Date().toISOString())
       setShowConfetti(true)
       setTimeout(() => setShowConfetti(false), 2000)
+      // Relecture des points (évite de recalculer côté client)
+      const { data: refreshed } = await supabase
+        .from("profiles")
+        .select("points, last_claim_date")
+        .eq("id", user.id)
+        .maybeSingle()
+      if (refreshed?.points != null) setLocalPoints(Number(refreshed.points))
     } catch {
       setClaimMessage("Erreur serveur.")
     } finally {
@@ -256,17 +251,28 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     }
   }
 
-  // 5. Abonnement : Google Play sur Android natif, Stripe sur le Web (VIP+ reste Stripe partout).
+  // 5. Abonnement : Google Play Billing sur Android natif, Stripe sur le Web.
   const handleCheckout = async (plan: string) => {
     setSubscriptionMessage(null)
     if (plan === "vip_plus") {
-      const vipPlus = process.env.NEXT_PUBLIC_STRIPE_VIP_PLUS_LINK
-      if (!vipPlus) {
-        setSubscriptionMessage("Paiement VIP+ indisponible pour le moment.")
+      try {
+        const supabase = createClient()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        await PaymentService.subscribe({
+          plan: "vip_plus_monthly",
+          accessToken: session?.access_token,
+        })
+        if (PaymentService.isAndroidNative()) {
+          setSubscriptionMessage("Abonnement VIP+ activé.")
+          router.refresh()
+        }
+        return
+      } catch (e) {
+        setSubscriptionMessage(e instanceof Error ? e.message : "Erreur abonnement VIP+.")
         return
       }
-      window.location.href = vipPlus
-      return
     }
     try {
       const supabase = createClient()
@@ -438,7 +444,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
               <Crown className="h-7 w-7 text-white" />
             </div>
             <div className="flex-1">
-              <CardTitle className="text-lg text-foreground">Membre BK Rewards</CardTitle>
+              <CardTitle className="text-lg text-foreground">Membre BKG Rewards</CardTitle>
               <div className="flex items-center gap-2 mt-0.5">
                 <p className="text-sm text-foreground/80">{firstName || "Utilisateur"}</p>
                 {normalizedGrade === "VIP+" ? (
@@ -538,14 +544,14 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
             variant="outline"
             className="w-full border-yellow-600/50 hover:bg-yellow-600/10 text-yellow-300"
           >
-            <Crown className="h-4 w-4 mr-2" /> VIP Hebdo — 1,99€/sem
+            <Crown className="h-4 w-4 mr-2" /> VIP BKG (Hebdo) — 1,99€/sem
           </Button>
           <Button
             onClick={() => handleCheckout("monthly")}
             variant="outline"
             className="w-full border-yellow-600/50 hover:bg-yellow-600/10 text-yellow-300"
           >
-            <Crown className="h-4 w-4 mr-2" /> VIP Mensuel — 4,99€/mois
+            <Crown className="h-4 w-4 mr-2" /> VIP BKG (Mensuel) — 4,99€/mois
           </Button>
         </CardContent>
       </Card>
@@ -568,7 +574,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
             onClick={() => handleCheckout("vip_plus")}
             className="w-full bg-gradient-to-r from-slate-200 to-slate-400 text-slate-900 font-bold hover:from-slate-100 hover:to-slate-300"
           >
-            <Star className="h-4 w-4 mr-2" /> VIP+ Mensuel — 7,99€/mois
+            <Star className="h-4 w-4 mr-2" /> BKG VIP+ (Mensuel) — 7,99€/mois
           </Button>
         </CardContent>
       </Card>
@@ -589,7 +595,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
               <p className="text-sm font-medium text-foreground">
                 {isVipPlus ? "⭐ Bonus VIP+ quotidien" : "👑 Bonus VIP quotidien"}
               </p>
-              <span className="text-xs text-foreground/50">+10 points/jour</span>
+              <span className="text-xs text-foreground/50">{isVipPlus ? "+15 points/jour" : "+10 points/jour"}</span>
             </div>
             <Button
               onClick={handleClaimDaily}

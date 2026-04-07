@@ -222,7 +222,7 @@ export function ReferralQR({ referralCode, referredCount = 0 }: ReferralQRProps)
             <div className="relative rounded-xl bg-white p-3 shadow-inner">
               <img
                 src={qrDataUrl}
-                alt="QR Code de parrainage BK'reward"
+                alt="QR Code de parrainage BKG Rewards"
                 className="h-48 w-48 rounded-lg"
               />
             </div>

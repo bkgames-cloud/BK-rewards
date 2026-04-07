@@ -7,7 +7,7 @@ import type { CapacitorConfig } from "@capacitor/cli"
  */
 const config = {
   appId: "com.bkrewards.rewards",
-  appName: "BK-Rewards",
+  appName: "BKG Rewards",
   webDir: "out",
   bundledWebRuntime: false,
   /**

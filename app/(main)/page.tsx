@@ -158,7 +158,7 @@ export default function HomePage() {
             <Card className="border border-green-500/40 bg-green-950/30 shadow-lg">
               <CardContent className="flex flex-col gap-2 p-4 text-sm text-green-50/95 sm:flex-row sm:items-center sm:justify-between">
                 <p>
-                  Votre compte a bien été supprimé. Merci d&apos;avoir utilisé BK Rewards.
+                  Votre compte a bien été supprimé. Merci d&apos;avoir utilisé BKG Rewards.
                 </p>
                 <Button
                   type="button"

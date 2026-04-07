@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "BK Rewards <support@bkg-rewards.com>",
+        from: "BKG Rewards <support@bkg-rewards.com>",
         to: ["support.bkgamers@gmail.com"],
         subject,
         html,

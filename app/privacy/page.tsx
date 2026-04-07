@@ -21,7 +21,7 @@ export default function PrivacyPage() {
       </Button>
       <h2 className="text-xl font-semibold text-foreground">Politique de confidentialité</h2>
       <p className="text-sm text-muted-foreground">
-        Cette page explique comment BK Rewards collecte, utilise et protège vos données.
+        Cette page explique comment BKG Rewards collecte, utilise et protège vos données.
       </p>
 
       <Card className="border border-border/50 bg-[#1a1a1a] shadow-lg">
@@ -51,7 +51,7 @@ export default function PrivacyPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            Les paiements et la gestion des abonnements sont traités par Stripe. BK Rewards ne stocke pas vos données de carte bancaire.
+            Les paiements et la gestion des abonnements sont traités par Stripe. BKG Rewards ne stocke pas vos données de carte bancaire.
           </p>
           <p>
             Stripe peut traiter des informations nécessaires au paiement (ex. identifiants de transaction) conformément à sa propre politique

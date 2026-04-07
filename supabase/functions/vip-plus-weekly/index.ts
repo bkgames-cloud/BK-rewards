@@ -124,7 +124,7 @@ Deno.serve(async () => {
         Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: "BK Rewards <support@bkg-rewards.com>",
+        from: "BKG Rewards <support@bkg-rewards.com>",
         to: ["support.bkgamers@gmail.com"],
         subject: "🏆 [BKG Rewards] Nouveau Vainqueur Mini-Jeu !",
         html: `
