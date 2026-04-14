@@ -156,7 +156,10 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       if (normalizedCode === "FLYER") {
         const next = Number(me.points ?? 0) + 3
         const res = await updateUserPoints(supabase, { userId: user.id, points: next })
-        if (!res.ok) throw new Error(res.error)
+        if (!res.ok) {
+          console.error("[profile] updateUserPoints (FLYER) failed", { error: res.error, details: res.details })
+          throw new Error(res.error)
+        }
         setLocalPoints(next)
         setReferralMessage("Code appliqué ! +3 points.")
         return
@@ -181,10 +184,16 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       const refNext = Number(referrer.points ?? 0) + 5
 
       const meRes = await updateUserPoints(supabase, { userId: user.id, points: myNext })
-      if (!meRes.ok) throw new Error(meRes.error)
+      if (!meRes.ok) {
+        console.error("[profile] updateUserPoints (me) failed", { error: meRes.error, details: meRes.details })
+        throw new Error(meRes.error)
+      }
 
       const refRes = await updateUserPoints(supabase, { userId: referrer.id, points: refNext })
-      if (!refRes.ok) throw new Error(refRes.error)
+      if (!refRes.ok) {
+        console.error("[profile] updateUserPoints (referrer) failed", { error: refRes.error, details: refRes.details })
+        throw new Error(refRes.error)
+      }
 
       setLocalPoints(myNext)
       setReferralMessage("Code appliqué ! +3 points.")

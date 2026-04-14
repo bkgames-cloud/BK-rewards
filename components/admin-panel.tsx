@@ -466,7 +466,7 @@ export function AdminPanel() {
       const { points: _ignored, ...rest } = cleaned
       const res = await updateUserPoints(supabase, { userId, points, extra: rest })
       if (!res.ok) {
-        console.error("[admin] updateUserPoints:", res.error)
+        console.error("[admin] updateUserPoints failed:", { error: res.error, details: res.details })
       }
     } else {
       await supabase.from("profiles").update(cleaned).eq("id", userId)

@@ -133,7 +133,7 @@ function SignUpContent() {
         const newPoints = (profileData?.points || 0) + bonusPoints
         const res = await updateUserPoints(supabase, { userId: signUpData.user.id, points: newPoints })
         if (!res.ok) {
-          console.error("[sign-up] update points:", res.error)
+          console.error("[sign-up] updateUserPoints failed:", { error: res.error, details: res.details })
         }
       }
 

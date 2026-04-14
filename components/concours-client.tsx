@@ -212,7 +212,20 @@ export function ConcoursClient() {
       extra: Object.fromEntries(Object.entries(updates).filter(([k]) => k !== "updated_at")),
     })
     if (!res.ok) {
-      console.error("[concours] profile update error:", res.error)
+      console.error("[concours] updateUserPoints failed", {
+        error: res.error,
+        details: res.details,
+        userId,
+        pointsToAdd: payload.pointsToAdd ?? 0,
+        nextPoints,
+        timestamps: payload.timestamps ?? null,
+        hint:
+          res.details.isMissingPointsBalanceColumn
+            ? "La colonne points_balance semble absente (fallback tenté)."
+            : res.details.isPermissionDenied
+              ? "Blocage probable RLS / permission denied sur profiles."
+              : "Erreur UPDATE profiles (voir code/message).",
+      })
       return false
     }
     return true
@@ -635,7 +648,12 @@ export function ConcoursClient() {
       .update({ tap_score: Math.max(0, Math.floor(Number(score) || 0)), updated_at: new Date().toISOString() })
       .eq("id", user.id)
     if (error) {
-      console.error("[concours] update tap_score:", error.message)
+      console.error("[concours] update tap_score failed:", {
+        message: error.message,
+        code: (error as { code?: string | null } | null)?.code ?? undefined,
+        hint: (error as { hint?: string | null } | null)?.hint ?? undefined,
+        details: (error as { details?: string | null } | null)?.details ?? undefined,
+      })
       toast({ title: "Erreur", description: "Impossible d’enregistrer le score.", variant: "destructive" })
       return
     }
