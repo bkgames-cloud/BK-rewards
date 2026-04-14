@@ -14,7 +14,7 @@ import type { ProfileAddressColumns } from "@/lib/profile-address"
 
 /** Expéditeur fixe — domaine vérifié Resend (jamais l’e-mail du visiteur). */
 export const RESEND_FROM_ADDRESS = "support@bkg-rewards.com"
-const RESEND_FROM = `BK Rewards <${RESEND_FROM_ADDRESS}>`
+const RESEND_FROM = `BKG Rewards <${RESEND_FROM_ADDRESS}>`
 
 function getResendApiKey(): string | undefined {
   const k = process.env.RESEND_API_KEY
@@ -342,7 +342,7 @@ export async function POST(request: Request) {
           mode: "receipt_confirmed",
         })
       }
-      const mailSubject = `[BK Rewards] Réception confirmée — ${prize}`
+      const mailSubject = `[BKG Rewards] Réception confirmée — ${prize}`
       const html = `<p>Bonne nouvelle ! ${escapeHtml(displayName)} a confirmé la réception de son lot ${escapeHtml(prize)}.</p>`
       // `to` : iCloud uniquement pour cette alerte. Contact / support : SUPPORT_INBOX_EMAIL (Gmail).
       const mail = await sendViaResend(RECEIPT_CONFIRMATION_TO_EMAIL, mailSubject, html)
@@ -384,7 +384,7 @@ export async function POST(request: Request) {
       const errors: string[] = []
 
       const mailLabel = winnerEmail || "e-mail inconnu"
-      const subj2 = `[BK Rewards] Lot « ${poolName} » — ${winnerName} (${mailLabel})`
+      const subj2 = `[BKG Rewards] Lot « ${poolName} » — ${winnerName} (${mailLabel})`
       const street = typeof body.adresse === "string" ? body.adresse.trim() : ""
       const cp = typeof body.code_postal === "string" ? body.code_postal.trim() : ""
       const city = typeof body.ville === "string" ? body.ville.trim() : ""
@@ -401,7 +401,7 @@ export async function POST(request: Request) {
 
       if (winnerEmail) {
         const subj1 = `Félicitations ! Tu as gagné le lot ${poolName}`
-        const html1 = `<p>${subj1}</p><p>Bonjour ${escapeHtml(winnerName)},</p><p>Tu peux suivre ton gain dans l'application BK Rewards.</p>`
+        const html1 = `<p>${subj1}</p><p>Bonjour ${escapeHtml(winnerName)},</p><p>Tu peux suivre ton gain dans l'application BKG Rewards.</p>`
         const [r1, r2] = await Promise.all([
           sendViaResend(winnerEmail, subj1, html1),
           sendViaResend(ADMIN_NOTIFY_EMAIL, subj2, html2),

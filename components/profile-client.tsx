@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { clearClientAuthStorageAndResetClient, createClient } from "@/lib/supabase/client"
+import { clearClientAuthStorageAndResetClient, createClient, ENABLE_SUPABASE_REALTIME } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -17,6 +17,7 @@ import { emailMatchesAdmin } from "@/lib/admin-config"
 import { gradeToFlags, normalizeGrade } from "@/lib/grade"
 import { getApiUrl } from "@/lib/api-origin"
 import { PaymentService } from "@/lib/payment-service"
+import { updateUserPoints } from "@/lib/update-user-points"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -70,6 +71,10 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const claimedToday =
     lastClaimDate && lastClaimDate.toDateString() === new Date().toDateString()
 
+  useEffect(() => {
+    setLocalPoints(profile?.points ?? 0)
+  }, [profile?.points])
+
   const normalizedGrade = normalizeGrade(profile?.grade)
   const flagsFromGrade = gradeToFlags(normalizedGrade)
   // Fallback compat (anciennes colonnes), mais on priorise grade.
@@ -86,6 +91,30 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     }
     fetchSessionUser()
   }, [])
+
+  // Sync live : si les points sont modifiés “à la main” dans Supabase, refléter sans redémarrer.
+  useEffect(() => {
+    if (!ENABLE_SUPABASE_REALTIME) return
+    if (!user?.id) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`profiles-points-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
+        (payload: { new: Record<string, unknown> }) => {
+          const raw = payload?.new?.points
+          const parsed = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN
+          if (Number.isFinite(parsed)) {
+            setLocalPoints(Math.max(0, Math.floor(parsed)))
+          }
+        },
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [user?.id])
 
   // ── Guard anti-400 : ne rien rendre tant que la session n'est pas chargée ──
   if (!user?.id) {
@@ -126,11 +155,8 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
 
       if (normalizedCode === "FLYER") {
         const next = Number(me.points ?? 0) + 3
-        const { error } = await supabase
-          .from("profiles")
-          .update({ points: next, updated_at: new Date().toISOString() })
-          .eq("id", user.id)
-        if (error) throw error
+        const res = await updateUserPoints(supabase, { userId: user.id, points: next })
+        if (!res.ok) throw new Error(res.error)
         setLocalPoints(next)
         setReferralMessage("Code appliqué ! +3 points.")
         return
@@ -154,16 +180,11 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       const myNext = Number(me.points ?? 0) + 3
       const refNext = Number(referrer.points ?? 0) + 5
 
-      const { error: meError } = await supabase
-        .from("profiles")
-        .update({ points: myNext, updated_at: new Date().toISOString() })
-        .eq("id", user.id)
-      if (meError) throw meError
+      const meRes = await updateUserPoints(supabase, { userId: user.id, points: myNext })
+      if (!meRes.ok) throw new Error(meRes.error)
 
-      await supabase
-        .from("profiles")
-        .update({ points: refNext, updated_at: new Date().toISOString() })
-        .eq("id", referrer.id)
+      const refRes = await updateUserPoints(supabase, { userId: referrer.id, points: refNext })
+      if (!refRes.ok) throw new Error(refRes.error)
 
       setLocalPoints(myNext)
       setReferralMessage("Code appliqué ! +3 points.")

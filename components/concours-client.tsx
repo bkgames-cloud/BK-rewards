@@ -22,6 +22,8 @@ import { Confetti } from "@/components/confetti"
 import { soundService } from "@/lib/sounds"
 import { Capacitor } from "@capacitor/core"
 import { showRewardVideo } from "@/lib/admob-rewarded"
+import { updateUserPoints } from "@/lib/update-user-points"
+import { ENABLE_SUPABASE_REALTIME } from "@/lib/supabase/client"
 
 export function ConcoursClient() {
   type LeaderboardEntry = {
@@ -196,19 +198,21 @@ export function ConcoursClient() {
     if (profileError || !profileData) return false
 
     const updates: Record<string, unknown> = {
-      points: Number(profileData.points ?? 0) + Number(payload.pointsToAdd ?? 0),
       updated_at: new Date().toISOString(),
     }
     for (const [key, value] of Object.entries(payload.timestamps ?? {})) {
       updates[key] = value
     }
 
-    const { error: updateError } = await supabase
-      .from("profiles")
-      .update(updates)
-      .eq("id", userId)
-    if (updateError) {
-      console.error("[concours] profile update error:", updateError.message)
+    const nextPoints = Number(profileData.points ?? 0) + Number(payload.pointsToAdd ?? 0)
+    const res = await updateUserPoints(supabase, {
+      userId,
+      points: nextPoints,
+      updatedAtIso: String(updates.updated_at),
+      extra: Object.fromEntries(Object.entries(updates).filter(([k]) => k !== "updated_at")),
+    })
+    if (!res.ok) {
+      console.error("[concours] profile update error:", res.error)
       return false
     }
     return true
@@ -288,6 +292,25 @@ export function ConcoursClient() {
 
     fetchUser()
   }, [])
+
+  useEffect(() => {
+    if (!ENABLE_SUPABASE_REALTIME) return
+    if (!userId) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`profiles-points-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${userId}` },
+        () => {
+          void refreshPoints(userId)
+        },
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [userId])
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000 * 30)

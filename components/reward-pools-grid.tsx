@@ -18,6 +18,7 @@ import { addInAppNotification } from "@/lib/in-app-notifications"
 import { DB_NOTIFICATIONS_CHANGED_EVENT } from "@/lib/db-notifications"
 import { formatCooldownMmSs, remainingCooldownMs } from "@/lib/draw-cooldown"
 import { getPoolTicketCost } from "@/lib/rewards-pool-normalize"
+import { ENABLE_SUPABASE_REALTIME } from "@/lib/supabase/client"
 
 const PROFILE_USER_ID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -262,6 +263,7 @@ export function RewardPoolsGrid({
 
   useEffect(() => {
     if (!enableRealtime) return
+    if (!ENABLE_SUPABASE_REALTIME) return
     const supabase = createClient()
     const scheduleRefetch = () => {
       if (Date.now() < suppressRealtimeReloadUntil.current) {
@@ -301,6 +303,27 @@ export function RewardPoolsGrid({
       void supabase.removeChannel(channel)
     }
   }, [loadPoolsFromServer, enableRealtime, fetchUserPointsFresh])
+
+  // Realtime profils : si les points changent côté Supabase (admin / Nexus), refléter immédiatement.
+  useEffect(() => {
+    if (!enableRealtime) return
+    if (!ENABLE_SUPABASE_REALTIME) return
+    if (!userId || !PROFILE_USER_ID_REGEX.test(userId)) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`profiles-points-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${userId}` },
+        () => {
+          void fetchUserPointsFresh()
+        },
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [enableRealtime, userId, fetchUserPointsFresh])
 
   useEffect(() => {
     if (typeof window === "undefined") return

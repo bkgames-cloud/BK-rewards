@@ -12,6 +12,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useState, useEffect } from "react"
 import { Sparkles, ArrowLeft } from "lucide-react"
+import { updateUserPoints } from "@/lib/update-user-points"
 
 function SignUpContent() {
   const [firstName, setFirstName] = useState("")
@@ -24,6 +25,28 @@ function SignUpContent() {
   const [referralCode, setReferralCode] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const supabase = createClient()
+    let cancelled = false
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return
+      if (data?.session?.user) {
+        window.location.href = "/"
+      }
+    })
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        window.location.href = "/"
+      }
+    })
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
+  }, [])
 
   // Lire le paramètre ref de l'URL
   useEffect(() => {
@@ -108,10 +131,10 @@ function SignUpContent() {
         }
 
         const newPoints = (profileData?.points || 0) + bonusPoints
-        await supabase
-          .from("profiles")
-          .update({ points: newPoints })
-          .eq("id", signUpData.user.id)
+        const res = await updateUserPoints(supabase, { userId: signUpData.user.id, points: newPoints })
+        if (!res.ok) {
+          console.error("[sign-up] update points:", res.error)
+        }
       }
 
       router.push("/auth/sign-up-success")

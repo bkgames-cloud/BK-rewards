@@ -19,6 +19,7 @@ import { ADMIN_EMAIL } from "@/lib/admin-config"
 import { getApiUrl } from "@/lib/api-origin"
 import type { ProfileAddressColumns } from "@/lib/profile-address"
 import { insertPrizeShippedNotification } from "@/lib/db-notifications"
+import { updateUserPoints } from "@/lib/update-user-points"
 
 type UserRow = {
   id: string
@@ -460,7 +461,16 @@ export function AdminPanel() {
       cleaned.points = Number.isFinite(p) ? Math.max(0, Math.floor(p)) : 0
     }
     if (Object.keys(cleaned).length === 0) return
-    await supabase.from("profiles").update(cleaned).eq("id", userId)
+    if ("points" in cleaned) {
+      const points = Number(cleaned.points ?? 0)
+      const { points: _ignored, ...rest } = cleaned
+      const res = await updateUserPoints(supabase, { userId, points, extra: rest })
+      if (!res.ok) {
+        console.error("[admin] updateUserPoints:", res.error)
+      }
+    } else {
+      await supabase.from("profiles").update(cleaned).eq("id", userId)
+    }
     await fetchUsers()
   }
 

@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { Session, User } from "@supabase/supabase-js"
+import type { RealtimeChannel } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
+import { ENABLE_SUPABASE_REALTIME } from "@/lib/supabase/client"
 import type { Profile, Season } from "@/lib/types"
 
 type AuthContextState = {
@@ -28,6 +30,7 @@ export function useAuthContext(options?: { requireAuth?: boolean; redirectTo?: s
 
   useEffect(() => {
     let mounted = true
+    let profileChannel: RealtimeChannel | null = null
 
     const init = async () => {
       const supabase = createClient()
@@ -57,14 +60,31 @@ export function useAuthContext(options?: { requireAuth?: boolean; redirectTo?: s
         return
       }
 
-      const [profileRes, seasonRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("points, grade, username, avatar_url, tap_score")
-          .eq("id", user.id)
-          .single(),
-        supabase.from("seasons").select("*").eq("is_active", true).limit(1).maybeSingle(),
-      ])
+      const seasonPromise = supabase
+        .from("seasons")
+        .select("*")
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle()
+
+      const primaryProfile = await supabase
+        .from("profiles")
+        // `points_balance` est optionnel (migration Nexus) : fallback si colonne absente.
+        .select("points, points_balance, grade, username, avatar_url, tap_score")
+        .eq("id", user.id)
+        .single()
+
+      const profileRes =
+        primaryProfile.error &&
+        (primaryProfile.error.message || "").toLowerCase().includes("points_balance")
+          ? await supabase
+              .from("profiles")
+              .select("points, grade, username, avatar_url, tap_score")
+              .eq("id", user.id)
+              .single()
+          : primaryProfile
+
+      const seasonRes = await seasonPromise
 
       if (profileRes.error) {
         console.error(
@@ -85,12 +105,50 @@ export function useAuthContext(options?: { requireAuth?: boolean; redirectTo?: s
         profile: (profileRes.data as Profile | null) ?? null,
         season: (seasonRes.data as Season | null) ?? null,
       })
+
+      // Realtime: garder le profil synchronisé sans redémarrage (points modifiés manuellement, etc.).
+      if (ENABLE_SUPABASE_REALTIME) {
+        profileChannel = supabase
+          .channel(`auth-profile-${user.id}`)
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
+            async () => {
+              const refreshedPrimary = await supabase
+                .from("profiles")
+                .select("points, points_balance, grade, username, avatar_url, tap_score")
+                .eq("id", user.id)
+                .maybeSingle()
+              const refreshed =
+                refreshedPrimary.error &&
+                (refreshedPrimary.error.message || "").toLowerCase().includes("points_balance")
+                  ? await supabase
+                      .from("profiles")
+                      .select("points, grade, username, avatar_url, tap_score")
+                      .eq("id", user.id)
+                      .maybeSingle()
+                  : refreshedPrimary
+              if (!mounted) return
+              if (refreshed.data) {
+                setState((prev) => ({
+                  ...prev,
+                  profile: (refreshed.data as Profile) ?? prev.profile,
+                }))
+              }
+            },
+          )
+          .subscribe()
+      }
     }
 
     void init()
 
     return () => {
       mounted = false
+      if (profileChannel) {
+        const supabase = createClient()
+        void supabase.removeChannel(profileChannel)
+      }
     }
   }, [options?.redirectTo, options?.requireAuth, router])
 
