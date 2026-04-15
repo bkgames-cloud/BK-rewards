@@ -467,30 +467,6 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
         </p>
       ) : null}
 
-      {/* ═══════════════════ IDENTITÉ LÉGALE (validation Google) ═══════════════════ */}
-      <Card className="border border-border/50 bg-black/30">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Identité légale</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">Société</span>
-            <span className="font-medium text-foreground text-right">{LEGAL_IDENTITY.companyName}</span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">SIREN</span>
-            <span className="font-mono text-foreground">{LEGAL_IDENTITY.siren}</span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">RCS</span>
-            <span className="font-medium text-foreground text-right">{LEGAL_IDENTITY.rcs}</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Ces informations sont affichées dans l’app pour faciliter la validation Google Play.
-          </p>
-        </CardContent>
-      </Card>
-
       {/* ═══════════════════ CARTE HEADER ═══════════════════ */}
       <Card className="border border-border/50 bg-gradient-to-br from-blue-600/40 via-indigo-600/30 to-purple-600/40 backdrop-blur-sm shadow-lg overflow-hidden">
         <CardHeader className="pb-3">
@@ -793,6 +769,25 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
         <LogOut className="h-4 w-4 mr-2" />
         {isLoading ? "Déconnexion..." : "Se déconnecter"}
       </Button>
+
+      {/* ═══════════════════ IDENTITÉ LÉGALE (discret) ═══════════════════ */}
+      <div className="pt-2">
+        <div className="h-px w-full bg-gradient-to-r from-transparent via-amber-400/25 to-transparent" />
+        <div className="mt-2 space-y-0.5 text-xs text-muted-foreground/70">
+          <p>
+            <span className="opacity-80">Société :</span>{" "}
+            <span className="text-foreground/70">{LEGAL_IDENTITY.companyName}</span>
+          </p>
+          <p>
+            <span className="opacity-80">SIREN :</span>{" "}
+            <span className="font-mono text-foreground/70">{LEGAL_IDENTITY.siren}</span>
+          </p>
+          <p>
+            <span className="opacity-80">RCS :</span>{" "}
+            <span className="text-foreground/70">{LEGAL_IDENTITY.rcs}</span>
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

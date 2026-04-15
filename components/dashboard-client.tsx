@@ -728,7 +728,7 @@ export function DashboardClient({
       {showWallet && isAuthenticated && (
         <Button
           type="button"
-          className="w-full bg-gradient-to-r from-orange-600 to-amber-500 py-6 text-base font-bold text-white shadow-lg hover:from-orange-500 hover:to-amber-400"
+          className="w-full bg-gradient-to-r from-[#D4AF37] via-amber-400 to-yellow-200 py-6 text-base font-extrabold text-black shadow-lg hover:from-amber-300 hover:to-yellow-100"
           onClick={() => void openInAppBrowser(offerwallUrl)}
         >
           🔥 Actions (Offres Spéciales)
