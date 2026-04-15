@@ -94,7 +94,7 @@ Deno.serve(async () => {
     const newPoints = (winnerProfile?.points || 0) + 500
     await supabase
       .from("profiles")
-      .update({ points: newPoints })
+      .update({ points: newPoints, points_balance: newPoints })
       .eq("id", winner.user_id)
   }
 

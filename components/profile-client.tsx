@@ -18,6 +18,7 @@ import { gradeToFlags, normalizeGrade } from "@/lib/grade"
 import { getApiUrl } from "@/lib/api-origin"
 import { PaymentService } from "@/lib/payment-service"
 import { updateUserPoints } from "@/lib/update-user-points"
+import { LEGAL_IDENTITY } from "@/lib/legal-identity"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -465,6 +466,30 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
           <span className="font-medium text-foreground break-all">{displayConnectionEmail}</span>
         </p>
       ) : null}
+
+      {/* ═══════════════════ IDENTITÉ LÉGALE (validation Google) ═══════════════════ */}
+      <Card className="border border-border/50 bg-black/30">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Identité légale</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Société</span>
+            <span className="font-medium text-foreground text-right">{LEGAL_IDENTITY.companyName}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">SIREN</span>
+            <span className="font-mono text-foreground">{LEGAL_IDENTITY.siren}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">RCS</span>
+            <span className="font-medium text-foreground text-right">{LEGAL_IDENTITY.rcs}</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Ces informations sont affichées dans l’app pour faciliter la validation Google Play.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* ═══════════════════ CARTE HEADER ═══════════════════ */}
       <Card className="border border-border/50 bg-gradient-to-br from-blue-600/40 via-indigo-600/30 to-purple-600/40 backdrop-blur-sm shadow-lg overflow-hidden">

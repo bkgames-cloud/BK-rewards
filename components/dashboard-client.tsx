@@ -20,6 +20,8 @@ import { getAndroidApkDownloadUrl } from "@/lib/android-app-promo"
 import { openExternalUrl } from "@/lib/open-external-url"
 import { openInAppBrowser } from "@/lib/in-app-browser"
 import { getMonlixDirectUrl } from "@/lib/monlix-urls"
+import { updateUserPoints } from "@/lib/update-user-points"
+import { useOfferwall } from "@/components/offerwall-provider"
 import {
   Dialog,
   DialogContent,
@@ -29,8 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-/** Monlix sur le site BKG Rewards — même URL pour le bouton Actions et le navigateur in-app (Capacitor Browser). */
-const ACTIONS_SPECIAL_OFFERS_URL = "https://bkg-rewards.com/monlix"
+/** URL offerwall (Monlix, Ayet, etc.) — chargée dynamiquement via `OfferwallProvider`. */
 
 interface DashboardClientProps {
   isAuthenticated: boolean
@@ -53,6 +54,7 @@ export function DashboardClient({
   showRewardsPools = false,
   minimalHome = false,
 }: DashboardClientProps) {
+  const { offerwall } = useOfferwall()
   const [points, setPoints] = useState(profile?.points ?? 0)
   const [isVip, setIsVip] = useState(false)
   const [isVipPlus, setIsVipPlus] = useState(false)
@@ -229,6 +231,8 @@ export function DashboardClient({
     const applyFlyerBonusOnDashboard = async () => {
       if (typeof window === "undefined") return
       if (!isAuthenticated || !hasValidUserId) return
+      const uid = userId
+      if (!uid) return
 
       const pendingReferral = window.sessionStorage.getItem("pending_referral")
       if (pendingReferral !== "FLYER") return
@@ -239,12 +243,12 @@ export function DashboardClient({
       } = await supabase.auth.getUser()
 
       // Securite: ne jamais modifier des points sans utilisateur authentifie.
-      if (!user?.id || user.id !== userId) return
+      if (!user?.id || user.id !== uid) return
 
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("points, flyer_bonus_granted")
-        .eq("id", userId)
+        .eq("id", uid)
         .maybeSingle()
 
       if (profileError || !profileData) return
@@ -255,16 +259,17 @@ export function DashboardClient({
       }
 
       const nextPoints = (profileData.points ?? 0) + 3
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({
-          points: nextPoints,
+      const res = await updateUserPoints(supabase, {
+        userId: uid,
+        points: nextPoints,
+        extra: {
           flyer_bonus_granted: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", userId)
-
-      if (updateError) return
+        },
+      })
+      if (!res.ok) {
+        console.error("[dashboard] flyer bonus updateUserPoints failed:", { error: res.error, details: res.details })
+        return
+      }
 
       setPoints(nextPoints)
       window.sessionStorage.removeItem("pending_referral")
@@ -588,7 +593,7 @@ export function DashboardClient({
     }
   }, [userId, router, isAuthenticated, rewardUserForVideo])
 
-  /** Web : Monlix direct. App : même URL que le bouton Actions — fenêtre @capacitor/browser (retour facile). */
+  /** Web/App : ouvre l’offerwall configurée (Monlix, Ayet, etc.). */
   const handleMissionAction = useCallback(async () => {
     if (!userId) return
     if (!isAuthenticated) {
@@ -599,15 +604,15 @@ export function DashboardClient({
     setStatusMessage(null)
     setStatusType(null)
     try {
-      const url = Capacitor.isNativePlatform() ? ACTIONS_SPECIAL_OFFERS_URL : getMonlixDirectUrl()
+      const url = offerwall?.url?.trim() || getMonlixDirectUrl()
       await openInAppBrowser(url)
     } catch (e) {
-      setStatusMessage(e instanceof Error ? e.message : "Impossible d’ouvrir Monlix.")
+      setStatusMessage(e instanceof Error ? e.message : "Impossible d’ouvrir l’offerwall.")
       setStatusType("error")
     } finally {
       setIsMissionRewarding(false)
     }
-  }, [userId, router, isAuthenticated])
+  }, [userId, router, isAuthenticated, offerwall?.url])
 
   const handleCopyReferral = async () => {
     if (!referralCode) return
@@ -628,7 +633,8 @@ export function DashboardClient({
   const androidApkUrl = getAndroidApkDownloadUrl()
   const androidAppLandingUrl =
     androidApkUrl.trim() !== "" ? androidApkUrl : "https://www.bkg-rewards.com"
-  const monlixOfferUrl = getMonlixDirectUrl()
+  const offerwallUrl = offerwall?.url?.trim() || getMonlixDirectUrl()
+  const offerwallName = offerwall?.name?.trim() || "Offerwall"
   const webExclusiveOffersUrl = "https://www.bkg-rewards.com"
   const isNativeApp = Capacitor.isNativePlatform()
   const monlixCardOrder = !isNativeApp ? "order-1 sm:order-1" : "order-2 sm:order-2"
@@ -723,7 +729,7 @@ export function DashboardClient({
         <Button
           type="button"
           className="w-full bg-gradient-to-r from-orange-600 to-amber-500 py-6 text-base font-bold text-white shadow-lg hover:from-orange-500 hover:to-amber-400"
-          onClick={() => void openInAppBrowser(ACTIONS_SPECIAL_OFFERS_URL)}
+          onClick={() => void openInAppBrowser(offerwallUrl)}
         >
           🔥 Actions (Offres Spéciales)
         </Button>
@@ -824,12 +830,12 @@ export function DashboardClient({
                     <p className="mt-1 text-xs text-muted-foreground">
                       {isNativeApp
                         ? "Ouverture dans une fenêtre intégrée — ferme pour revenir dans BKG Rewards."
-                        : "Priorité : offres Monlix partenaires (accès direct)."}
+                        : "Accès direct aux offres (offerwall configurée)."}
                     </p>
                   </div>
                 </div>
                 <span className="shrink-0 rounded-full bg-violet-500/25 px-2.5 py-1 text-xs font-bold text-violet-100">
-                  Monlix
+                  {offerwallName}
                 </span>
               </div>
               <Button
@@ -838,9 +844,13 @@ export function DashboardClient({
                 onClick={() => void handleMissionAction()}
                 disabled={isMissionRewarding}
                 className="w-full border border-violet-500/40 bg-violet-500/15 text-foreground hover:bg-violet-500/25"
-                aria-label="Ouvrir les offres Monlix"
+                aria-label="Ouvrir l’offerwall"
               >
-                {isMissionRewarding ? "Ouverture…" : isNativeApp ? "Ouvrir Monlix (site BKG Rewards)" : "Monlix — offres"}
+                {isMissionRewarding
+                  ? "Ouverture…"
+                  : isNativeApp
+                    ? `Ouvrir ${offerwallName}`
+                    : `${offerwallName} — offres`}
               </Button>
             </CardContent>
           </Card>
@@ -853,9 +863,9 @@ export function DashboardClient({
           <Button
             type="button"
             className="w-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 text-white shadow-md hover:from-emerald-500/95 hover:to-teal-500/95"
-            onClick={() => void openInAppBrowser(monlixOfferUrl)}
+            onClick={() => void openInAppBrowser(offerwallUrl)}
           >
-            Monlix
+            {offerwallName}
           </Button>
           <Button
             type="button"

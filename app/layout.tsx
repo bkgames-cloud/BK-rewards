@@ -10,6 +10,7 @@ import { AppStateAudioHandler } from "@/components/app-state-audio"
 import { NativeBackButtonHandler } from "@/components/native-back-handler"
 import { NativeImmersiveInit } from "@/components/native-immersive-init"
 import { NativeWindowOpenShim } from "@/components/native-window-open-shim"
+import { OfferwallProvider } from "@/components/offerwall-provider"
 import "./globals.css"
 import { SITE_PUBLIC_URL } from "@/lib/site-url"
 
@@ -77,7 +78,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#1a1625",
+  themeColor: "#050505",
 }
 
 export default function RootLayout({
@@ -98,7 +99,7 @@ export default function RootLayout({
         <AdMobInitializer />
         <AppStateAudioHandler />
         <Suspense fallback={<div className="min-h-svh w-full" />}>
-          {children}
+          <OfferwallProvider>{children}</OfferwallProvider>
         </Suspense>
         <FloatingSoundToggle />
         <Suspense fallback={null}>

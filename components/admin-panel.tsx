@@ -688,12 +688,10 @@ export function AdminPanel() {
           })
           if (debitRpcError) {
             console.error("debit_draw_winner_points:", debitRpcError)
-            const { error: pointsUpdateError } = await supabase
-              .from("profiles")
-              .update({ points: newPoints, updated_at: new Date().toISOString() })
-              .eq("id", winnerId)
-            if (pointsUpdateError) {
-              setDrawMessage(`Erreur deduction points: ${pointsUpdateError.message}`)
+            const res = await updateUserPoints(supabase, { userId: winnerId, points: newPoints })
+            if (!res.ok) {
+              setDrawMessage(`Erreur deduction points: ${res.error}`)
+              console.error("[admin] fallback updateUserPoints failed:", { error: res.error, details: res.details })
               setDrawingPoolId(null)
               return
             }
