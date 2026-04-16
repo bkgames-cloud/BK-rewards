@@ -54,7 +54,7 @@ export function DashboardClient({
   showRewardsPools = false,
   minimalHome = false,
 }: DashboardClientProps) {
-  const { offerwall } = useOfferwall()
+  const { offerwall, loading: offerwallLoading } = useOfferwall()
   const [points, setPoints] = useState(profile?.points ?? 0)
   const [isVip, setIsVip] = useState(false)
   const [isVipPlus, setIsVipPlus] = useState(false)
@@ -601,7 +601,7 @@ export function DashboardClient({
       return
     }
     if (!offerwall?.url?.trim()) {
-      setStatusMessage("Arrive bientôt : l’offerwall est en cours d’activation.")
+      setStatusMessage("Offres en cours de mise à jour.")
       setStatusType("error")
       return
     }
@@ -639,6 +639,7 @@ export function DashboardClient({
   const androidAppLandingUrl =
     androidApkUrl.trim() !== "" ? androidApkUrl : "https://www.bkg-rewards.com"
   const offerwallEnabled = Boolean(offerwall?.url && offerwall?.url.trim() !== "")
+  const offerwallUiDisabled = offerwallLoading || !offerwallEnabled
   const offerwallUrl = offerwall?.url?.trim() || getMonlixDirectUrl()
   const offerwallName = offerwall?.name?.trim() || "Offerwall"
   const webExclusiveOffersUrl = "https://www.bkg-rewards.com"
@@ -734,18 +735,25 @@ export function DashboardClient({
       {showWallet && isAuthenticated && (
         <Button
           type="button"
-          className="w-full bg-gradient-to-r from-[#D4AF37] via-amber-400 to-yellow-200 py-6 text-base font-extrabold text-black shadow-lg hover:from-amber-300 hover:to-yellow-100 disabled:opacity-60"
+          className="relative w-full overflow-hidden bg-gradient-to-r from-[#D4AF37] via-amber-400 to-yellow-200 py-6 text-base font-extrabold text-black shadow-lg hover:from-amber-300 hover:to-yellow-100 disabled:opacity-60"
           onClick={() => {
-            if (!offerwallEnabled) {
-              setStatusMessage("Arrive bientôt : l’offerwall est en cours d’activation.")
+            if (offerwallUiDisabled) {
+              setStatusMessage("Offres en cours de mise à jour.")
               setStatusType("error")
               return
             }
             void openInAppBrowser(offerwallUrl)
           }}
-          disabled={!offerwallEnabled}
+          disabled={offerwallUiDisabled}
         >
-          {offerwallEnabled ? "🔥 Actions (Offres Spéciales)" : "⏳ Offerwall — arrive bientôt"}
+          {offerwallUiDisabled ? (
+            <>
+              <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent opacity-80 animate-shimmer" />
+              <span className="relative">⏳ Offres en cours de mise à jour</span>
+            </>
+          ) : (
+            "🔥 Actions (Offres Spéciales)"
+          )}
         </Button>
       )}
 
@@ -856,15 +864,17 @@ export function DashboardClient({
                 type="button"
                 variant="secondary"
                 onClick={() => void handleMissionAction()}
-                disabled={isMissionRewarding}
-                className="w-full border border-violet-500/40 bg-violet-500/15 text-foreground hover:bg-violet-500/25"
+                disabled={isMissionRewarding || offerwallUiDisabled}
+                className="w-full border border-violet-500/40 bg-violet-500/15 text-foreground hover:bg-violet-500/25 disabled:opacity-60"
                 aria-label="Ouvrir l’offerwall"
               >
-                {isMissionRewarding
-                  ? "Ouverture…"
-                  : isNativeApp
-                    ? `Ouvrir ${offerwallName}`
-                    : `${offerwallName} — offres`}
+                {offerwallUiDisabled
+                  ? "⏳ Offres en cours de mise à jour"
+                  : isMissionRewarding
+                    ? "Ouverture…"
+                    : isNativeApp
+                      ? `Ouvrir ${offerwallName}`
+                      : `${offerwallName} — offres`}
               </Button>
             </CardContent>
           </Card>
@@ -876,10 +886,18 @@ export function DashboardClient({
         <div className="flex w-full max-w-lg flex-col gap-2.5 sm:mx-auto">
           <Button
             type="button"
-            className="w-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 text-white shadow-md hover:from-emerald-500/95 hover:to-teal-500/95"
-            onClick={() => void openInAppBrowser(offerwallUrl)}
+            className="w-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 text-white shadow-md hover:from-emerald-500/95 hover:to-teal-500/95 disabled:opacity-60"
+            onClick={() => {
+              if (offerwallUiDisabled) {
+                setStatusMessage("Offres en cours de mise à jour.")
+                setStatusType("error")
+                return
+              }
+              void openInAppBrowser(offerwallUrl)
+            }}
+            disabled={offerwallUiDisabled}
           >
-            {offerwallName}
+            {offerwallUiDisabled ? "Offres en cours de mise à jour" : offerwallName}
           </Button>
           <Button
             type="button"

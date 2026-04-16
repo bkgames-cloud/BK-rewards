@@ -27,6 +27,9 @@ public class MainActivity extends BridgeActivity {
         decor.post(this::hideSystemBars);
         decor.postDelayed(this::hideSystemBars, 100);
         decor.postDelayed(this::hideSystemBars, 400);
+
+        // Billing bootstrap (pas d'achat automatique, juste init lib)
+        BillingBootstrapper.init(getApplication());
     }
 
     @Override
