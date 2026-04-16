@@ -6,6 +6,7 @@ import { Analytics } from "@vercel/analytics/next"
 import { Toaster } from "@/components/ui/toaster"
 import { FloatingSoundToggle } from "@/components/floating-sound-toggle"
 import { AdMobInitializer } from "@/components/admob-initializer"
+import { AndroidSubscriptionVerifier } from "@/components/android-subscription-verifier"
 import { AppStateAudioHandler } from "@/components/app-state-audio"
 import { NativeBackButtonHandler } from "@/components/native-back-handler"
 import { NativeImmersiveInit } from "@/components/native-immersive-init"
@@ -97,6 +98,7 @@ export default function RootLayout({
         <NativeImmersiveInit />
         <NativeWindowOpenShim />
         <AdMobInitializer />
+        <AndroidSubscriptionVerifier />
         <AppStateAudioHandler />
         <Suspense fallback={<div className="min-h-svh w-full" />}>
           <OfferwallProvider>{children}</OfferwallProvider>

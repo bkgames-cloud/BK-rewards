@@ -1,7 +1,7 @@
 -- Étend la logique VIP/VIP+ basée sur `public.purchases.product_id`.
 -- À exécuter dans Supabase → SQL Editor après scripts/043_purchases.sql.
 --
--- Hypothèse : les produits Google Play sont `vip_mensuel` et `vip_plus_mensuel`
+-- Hypothèse : les produits Google Play sont `vip_mensuel_bkg` et `vip_plus_mensuel_bkg`
 -- (ou ceux définis côté app). Ajuste les IDs si besoin.
 
 CREATE OR REPLACE FUNCTION public.handle_purchases_active_vip()
@@ -17,7 +17,7 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  v_is_vip_plus := (NEW.product_id = 'vip_plus_mensuel');
+  v_is_vip_plus := (NEW.product_id IN ('vip_plus_mensuel_bkg', 'vip_plus_mensuel'));
 
   UPDATE public.profiles
   SET

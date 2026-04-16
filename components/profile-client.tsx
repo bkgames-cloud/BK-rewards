@@ -54,6 +54,11 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [subscriptionMessage, setSubscriptionMessage] = useState<string | null>(null)
+  const [androidPrices, setAndroidPrices] = useState<{
+    weekly: string
+    monthly: string
+    vipPlusMonthly: string
+  } | null>(null)
   const router = useRouter()
   const [localPoints, setLocalPoints] = useState(profile?.points ?? 0)
   const [isClaimingBonus, setIsClaimingBonus] = useState(false)
@@ -90,6 +95,19 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       setSessionLoading(false)
     }
     fetchSessionUser()
+  }, [])
+
+  useEffect(() => {
+    if (!PaymentService.isAndroidNative()) return
+    let cancelled = false
+    const run = async () => {
+      const labels = await PaymentService.getAndroidPriceLabels()
+      if (!cancelled) setAndroidPrices(labels)
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Sync live : si les points sont modifiés “à la main” dans Supabase, refléter sans redémarrer.
@@ -574,14 +592,16 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
             variant="outline"
             className="w-full border-yellow-600/50 hover:bg-yellow-600/10 text-yellow-300"
           >
-            <Crown className="h-4 w-4 mr-2" /> VIP BKG (Hebdo) — 1,99€/sem
+            <Crown className="h-4 w-4 mr-2" /> VIP BKG (Hebdo) —{" "}
+            {androidPrices?.weekly ? `${androidPrices.weekly}/sem` : "1,99€/sem"}
           </Button>
           <Button
             onClick={() => handleCheckout("monthly")}
             variant="outline"
             className="w-full border-yellow-600/50 hover:bg-yellow-600/10 text-yellow-300"
           >
-            <Crown className="h-4 w-4 mr-2" /> VIP BKG (Mensuel) — 4,99€/mois
+            <Crown className="h-4 w-4 mr-2" /> VIP BKG (Mensuel) —{" "}
+            {androidPrices?.monthly ? `${androidPrices.monthly}/mois` : "4,99€/mois"}
           </Button>
         </CardContent>
       </Card>
@@ -604,7 +624,8 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
             onClick={() => handleCheckout("vip_plus")}
             className="w-full bg-gradient-to-r from-slate-200 to-slate-400 text-slate-900 font-bold hover:from-slate-100 hover:to-slate-300"
           >
-            <Star className="h-4 w-4 mr-2" /> BKG VIP+ (Mensuel) — 7,99€/mois
+            <Star className="h-4 w-4 mr-2" /> BKG VIP+ (Mensuel) —{" "}
+            {androidPrices?.vipPlusMonthly ? `${androidPrices.vipPlusMonthly}/mois` : "7,99€/mois"}
           </Button>
         </CardContent>
       </Card>

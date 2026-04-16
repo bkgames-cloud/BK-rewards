@@ -1,6 +1,11 @@
 import { App } from "@capacitor/app"
 import { Capacitor } from "@capacitor/core"
-import { ANDROID_PACKAGE_NAME, GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID, GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID } from "@/lib/payment-constants"
+import {
+  ANDROID_PACKAGE_NAME,
+  GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID,
+} from "@/lib/payment-constants"
 import { createClient } from "@/lib/supabase/client"
 
 /**
@@ -16,6 +21,11 @@ import { createClient } from "@/lib/supabase/client"
  */
 
 export type SubscribePlan = "weekly" | "monthly"
+export type AndroidPriceLabels = {
+  weekly: string
+  monthly: string
+  vipPlusMonthly: string
+}
 
 type CdvWindow = Window & {
   CdvPurchase?: {
@@ -48,6 +58,36 @@ type CdvError = { isError: true; code: number; message: string } | undefined
 function isAndroidNative(): boolean {
   if (typeof window === "undefined") return false
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android"
+}
+
+const GOOGLE_PURCHASE_TOKEN_CACHE_KEY = "bk_gp_purchase_tokens_v1"
+
+function readCachedGooglePurchaseTokens(): Record<string, string> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(GOOGLE_PURCHASE_TOKEN_CACHE_KEY) || ""
+    const json = raw ? (JSON.parse(raw) as unknown) : null
+    if (!json || typeof json !== "object") return {}
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(json as Record<string, unknown>)) {
+      if (typeof k === "string" && typeof v === "string" && k.trim() && v.trim()) {
+        out[k.trim()] = v.trim()
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function writeCachedGooglePurchaseToken(productId: string, purchaseToken: string) {
+  if (typeof window === "undefined") return
+  const next = { ...readCachedGooglePurchaseTokens(), [productId]: purchaseToken }
+  try {
+    window.localStorage.setItem(GOOGLE_PURCHASE_TOKEN_CACHE_KEY, JSON.stringify(next))
+  } catch {
+    // ignore (stockage plein / privé)
+  }
 }
 
 /** Attend le bridge natif Capacitor + éventuel `deviceready` Cordova (plugin IAP). */
@@ -104,6 +144,83 @@ export class PaymentService {
     return isAndroidNative()
   }
 
+  static async getAndroidPriceLabels(): Promise<AndroidPriceLabels> {
+    const fallback: AndroidPriceLabels = {
+      weekly: "1,99€",
+      monthly: "4,99€",
+      vipPlusMonthly: "7,99€",
+    }
+    if (!isAndroidNative()) return fallback
+    try {
+      const { store, cdv } = await getStore()
+      const { ProductType, Platform } = cdv
+      const ids = [
+        GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID,
+        GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
+        GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
+      ].filter(Boolean)
+
+      for (const id of ids) {
+        store.register({ id, type: ProductType.PAID_SUBSCRIPTION, platform: Platform.GOOGLE_PLAY })
+      }
+      await store.initialize([Platform.GOOGLE_PLAY])
+      await store.update()
+
+      const getPretty = (id: string): string | null => {
+        const product = store.get(id, Platform.GOOGLE_PLAY) as any
+        if (!product) return null
+        const direct =
+          (typeof product?.price === "string" && product.price) ||
+          (typeof product?.pricing === "string" && product.pricing) ||
+          (typeof product?.pricing?.price === "string" && product.pricing.price) ||
+          null
+        if (direct) return direct
+        const offer = (product.getOffer?.() as any) || null
+        const offerPrice =
+          (typeof offer?.pricingPhases?.[0]?.price === "string" && offer.pricingPhases[0].price) ||
+          (typeof offer?.pricingPhases?.[0]?.formattedPrice === "string" && offer.pricingPhases[0].formattedPrice) ||
+          null
+        return offerPrice
+      }
+
+      return {
+        weekly: getPretty(GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID) || fallback.weekly,
+        monthly: getPretty(GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID) || fallback.monthly,
+        vipPlusMonthly: getPretty(GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID) || fallback.vipPlusMonthly,
+      }
+    } catch {
+      return fallback
+    }
+  }
+
+  /**
+   * Android only — revalide les abonnements connus via tokens en cache.
+   * Cela re-synchronise `public.purchases` et donc `profiles.is_vip`/`grade` via triggers SQL.
+   */
+  static async verifyAndroidSubscriptionsOnLaunch(accessToken: string | null | undefined): Promise<void> {
+    if (!isAndroidNative()) return
+    if (!accessToken?.trim()) return
+    const cached = readCachedGooglePurchaseTokens()
+    const entries = Object.entries(cached).filter(([pid, tok]) => pid && tok)
+    if (entries.length === 0) return
+    const supabase = createClient()
+    await Promise.all(
+      entries.map(async ([productId, purchaseToken]) => {
+        try {
+          await supabase.functions.invoke("verify-google-purchase", {
+            body: {
+              packageName: ANDROID_PACKAGE_NAME,
+              productId,
+              purchaseToken,
+            },
+          })
+        } catch {
+          // ignore
+        }
+      }),
+    )
+  }
+
   static async subscribe(params: {
     plan: SubscribePlan | "vip_plus_monthly"
     accessToken: string | null | undefined
@@ -119,14 +236,8 @@ export class PaymentService {
         await buyVIP(accessToken)
         return
       }
-      const weeklySku = process.env.NEXT_PUBLIC_GOOGLE_PLAY_VIP_WEEKLY_ID?.trim()
-      if (weeklySku) {
-        await purchaseAndroidSubscription(weeklySku, accessToken)
-        return
-      }
-      throw new Error(
-        "Abonnement hebdomadaire : créez le produit dans Play Console et définissez NEXT_PUBLIC_GOOGLE_PLAY_VIP_WEEKLY_ID.",
-      )
+      await purchaseAndroidSubscription(GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID, accessToken)
+      return
     }
 
     const weekly = process.env.NEXT_PUBLIC_STRIPE_WEEKLY_LINK
@@ -205,6 +316,7 @@ async function purchaseAndroidSubscription(
         if (!purchaseToken) {
           throw new Error("Jeton d’achat Google manquant.")
         }
+        writeCachedGooglePurchaseToken(productId, purchaseToken)
 
         const supabase = createClient()
         const { data: fnRes, error: fnErr } = await supabase.functions.invoke("verify-google-purchase", {
