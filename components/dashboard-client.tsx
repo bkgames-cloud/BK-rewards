@@ -600,6 +600,11 @@ export function DashboardClient({
       router.push("/auth/login/")
       return
     }
+    if (!offerwall?.url?.trim()) {
+      setStatusMessage("Arrive bientôt : l’offerwall est en cours d’activation.")
+      setStatusType("error")
+      return
+    }
     setIsMissionRewarding(true)
     setStatusMessage(null)
     setStatusType(null)
@@ -633,6 +638,7 @@ export function DashboardClient({
   const androidApkUrl = getAndroidApkDownloadUrl()
   const androidAppLandingUrl =
     androidApkUrl.trim() !== "" ? androidApkUrl : "https://www.bkg-rewards.com"
+  const offerwallEnabled = Boolean(offerwall?.url && offerwall?.url.trim() !== "")
   const offerwallUrl = offerwall?.url?.trim() || getMonlixDirectUrl()
   const offerwallName = offerwall?.name?.trim() || "Offerwall"
   const webExclusiveOffersUrl = "https://www.bkg-rewards.com"
@@ -728,10 +734,18 @@ export function DashboardClient({
       {showWallet && isAuthenticated && (
         <Button
           type="button"
-          className="w-full bg-gradient-to-r from-[#D4AF37] via-amber-400 to-yellow-200 py-6 text-base font-extrabold text-black shadow-lg hover:from-amber-300 hover:to-yellow-100"
-          onClick={() => void openInAppBrowser(offerwallUrl)}
+          className="w-full bg-gradient-to-r from-[#D4AF37] via-amber-400 to-yellow-200 py-6 text-base font-extrabold text-black shadow-lg hover:from-amber-300 hover:to-yellow-100 disabled:opacity-60"
+          onClick={() => {
+            if (!offerwallEnabled) {
+              setStatusMessage("Arrive bientôt : l’offerwall est en cours d’activation.")
+              setStatusType("error")
+              return
+            }
+            void openInAppBrowser(offerwallUrl)
+          }}
+          disabled={!offerwallEnabled}
         >
-          🔥 Actions (Offres Spéciales)
+          {offerwallEnabled ? "🔥 Actions (Offres Spéciales)" : "⏳ Offerwall — arrive bientôt"}
         </Button>
       )}
 

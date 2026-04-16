@@ -28,6 +28,13 @@ export function OfferwallProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const load = async () => {
+      const enabled =
+        (process.env.NEXT_PUBLIC_OFFERWALL_ENABLED || "").trim().toLowerCase() !== "false"
+      if (!enabled) {
+        setOfferwall(null)
+        setLoading(false)
+        return
+      }
       try {
         const supabase = createClient()
         const { data, error } = await supabase
