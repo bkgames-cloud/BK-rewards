@@ -5,8 +5,11 @@ export const LEGAL_IDENTITY = {
   siren:
     (process.env.NEXT_PUBLIC_COMPANY_SIREN || "").trim() ||
     "103613618",
+  siret:
+    (process.env.NEXT_PUBLIC_COMPANY_SIRET || "").trim() ||
+    "10361361800018",
   rcs:
     (process.env.NEXT_PUBLIC_COMPANY_RCS || "").trim() ||
-    "DIEPPE (76370)",
+    "DIEPPE",
 } as const
 

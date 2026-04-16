@@ -3,6 +3,7 @@ import { Suspense } from "react"
 import { Header } from "@/components/header"
 import { BottomNav } from "@/components/bottom-nav"
 import { PageLoader } from "@/components/page-loader"
+import { LEGAL_IDENTITY } from "@/lib/legal-identity"
 
 export default function ConcoursLayout({
   children,
@@ -23,6 +24,11 @@ export default function ConcoursLayout({
           Contacter le service client
         </a>
         <p className="text-xs">Propulsé par BKG Rewards</p>
+        <div className="mx-auto w-full max-w-md pb-2">
+          <p className="text-center text-[11px] text-muted-foreground/40">
+            Société {LEGAL_IDENTITY.companyName} • SIREN {LEGAL_IDENTITY.siren} • SIRET {LEGAL_IDENTITY.siret} • RCS {LEGAL_IDENTITY.rcs}
+          </p>
+        </div>
         <p className="text-xs">
           BKG Rewards est une plateforme indépendante. Les marques citées appartiennent à leurs propriétaires
           respectifs et ne sont pas affiliées à ce service.

@@ -18,7 +18,6 @@ import { gradeToFlags, normalizeGrade } from "@/lib/grade"
 import { getApiUrl } from "@/lib/api-origin"
 import { PaymentService } from "@/lib/payment-service"
 import { updateUserPoints } from "@/lib/update-user-points"
-import { LEGAL_IDENTITY } from "@/lib/legal-identity"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -769,25 +768,6 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
         <LogOut className="h-4 w-4 mr-2" />
         {isLoading ? "Déconnexion..." : "Se déconnecter"}
       </Button>
-
-      {/* ═══════════════════ IDENTITÉ LÉGALE (discret) ═══════════════════ */}
-      <div className="pt-2">
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-amber-400/25 to-transparent" />
-        <div className="mt-2 space-y-0.5 text-xs text-muted-foreground/70">
-          <p>
-            <span className="opacity-80">Société :</span>{" "}
-            <span className="text-foreground/70">{LEGAL_IDENTITY.companyName}</span>
-          </p>
-          <p>
-            <span className="opacity-80">SIREN :</span>{" "}
-            <span className="font-mono text-foreground/70">{LEGAL_IDENTITY.siren}</span>
-          </p>
-          <p>
-            <span className="opacity-80">RCS :</span>{" "}
-            <span className="text-foreground/70">{LEGAL_IDENTITY.rcs}</span>
-          </p>
-        </div>
-      </div>
     </div>
   )
 }

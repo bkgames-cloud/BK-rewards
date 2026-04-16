@@ -5,6 +5,7 @@ import { BottomNav } from "@/components/bottom-nav"
 import { PageLoader } from "@/components/page-loader"
 import { FooterSocialLinks } from "@/components/footer-social-links"
 import Link from "next/link"
+import { LEGAL_IDENTITY } from "@/lib/legal-identity"
 
 export default function MainLayout({
   children,
@@ -34,6 +35,11 @@ export default function MainLayout({
           </Link>
         </div>
         <p className="text-xs">Propulsé par BKG Rewards</p>
+        <div className="mx-auto w-full max-w-md pb-2">
+          <p className="text-center text-[11px] text-muted-foreground/40">
+            Société {LEGAL_IDENTITY.companyName} • SIREN {LEGAL_IDENTITY.siren} • SIRET {LEGAL_IDENTITY.siret} • RCS {LEGAL_IDENTITY.rcs}
+          </p>
+        </div>
         <p className="text-xs">
           BKG Rewards est une plateforme indépendante. Les marques citées appartiennent à leurs propriétaires
           respectifs et ne sont pas affiliées à ce service.
