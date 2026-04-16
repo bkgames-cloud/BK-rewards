@@ -13,19 +13,24 @@ import type { PluginListenerHandle } from "@capacitor/core"
  * `true` = tests (IDs démo + SDK test). `false` = constantes PROD ci‑dessous + pas de mode test SDK.
  * Pour un test sur téléphone réel sans risque compte prod : `true` + ID app TEST dans strings.xml.
  */
-export const ADMOB_USE_TEST_IDS = true
+export const ADMOB_USE_TEST_IDS =
+  (process.env.NEXT_PUBLIC_ADMOB_USE_TEST_IDS || "").trim().toLowerCase() === "true"
 
 /** IDs de test Google (activés tant que ADMOB_USE_TEST_IDS === true). */
 export const GOOGLE_TEST_REWARDED_AD_UNIT_ANDROID = "ca-app-pub-3940256099942544/5224354917"
 export const GOOGLE_TEST_REWARDED_AD_UNIT_IOS = "ca-app-pub-3940256099942544/1712485313"
 
 /** Production — ID application (méta Android : `strings.xml` → `admob_app_id`). Non utilisé en JS ; référence pour bascule prod. */
-export const ADMOB_PRODUCTION_APP_ID = "ca-app-pub-2044584502893474~6360384667"
+export const ADMOB_PRODUCTION_APP_ID =
+  (process.env.NEXT_PUBLIC_ADMOB_APP_ID || "").trim() ||
+  "ca-app-pub-2044584502893474~6360384667"
 
 /** Production — unités récompensées (utilisées quand ADMOB_USE_TEST_IDS === false). */
 export const ADMOB_PRODUCTION_REWARDED_AD_UNIT_ANDROID =
+  (process.env.NEXT_PUBLIC_ADMOB_REWARDED_ID_ANDROID || "").trim() ||
   "ca-app-pub-2044584502893474/9888566137"
 export const ADMOB_PRODUCTION_REWARDED_AD_UNIT_IOS =
+  (process.env.NEXT_PUBLIC_ADMOB_REWARDED_ID_IOS || "").trim() ||
   "ca-app-pub-2044584502893474/9888566137"
 
 let initDone = false
@@ -47,6 +52,7 @@ export async function initializeAdMob(): Promise<void> {
   if (typeof window === "undefined") return
   const { Capacitor } = await import("@capacitor/core")
   if (!Capacitor.isNativePlatform()) return
+  if (Capacitor.getPlatform() !== "android") return
   if (initDone) return
   const { AdMob } = await import("@capacitor-community/admob")
   console.log("[admob] initialize: calling AdMob.initialize", {
@@ -72,6 +78,9 @@ export async function showRewardVideo(options: {
   const { Capacitor } = await import("@capacitor/core")
   if (!Capacitor.isNativePlatform()) {
     return { ok: false, message: "Pub disponible uniquement sur l’application mobile." }
+  }
+  if (Capacitor.getPlatform() !== "android") {
+    return { ok: false, message: "Pub récompensée disponible uniquement sur Android." }
   }
 
   if (rewardedAdFlowInProgress) {
