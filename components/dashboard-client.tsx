@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Capacitor } from "@capacitor/core"
 import { SeasonTimer } from "@/components/season-timer"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -41,6 +40,8 @@ interface DashboardClientProps {
   showWelcome?: boolean
   showRewardsPools?: boolean
   minimalHome?: boolean
+  /** Détection plateforme injectée par la page (Web vs Android natif). */
+  isNativeApp?: boolean
 }
 
 export function DashboardClient({
@@ -52,6 +53,7 @@ export function DashboardClient({
   showWelcome = true,
   showRewardsPools = false,
   minimalHome = false,
+  isNativeApp: isNativeAppProp,
 }: DashboardClientProps) {
   const { toast } = useToast()
   const [offersSoonOpen, setOffersSoonOpen] = useState(false)
@@ -506,7 +508,7 @@ export function DashboardClient({
 
     addInAppNotification("Point reçu !")
     soundService.playCoinSound()
-    if (!Capacitor.isNativePlatform()) {
+    if (!isNativeApp) {
       router.refresh()
     }
     // Relecture en arrière-plan pour se recaler exactement sur la DB (ex. changement d’heure / timezone).
@@ -545,7 +547,7 @@ export function DashboardClient({
     }
 
     const now = Date.now()
-    const minGapMs = Capacitor.isNativePlatform() ? 3500 : 1200
+    const minGapMs = isNativeApp ? 3500 : 1200
     if (now - lastAdClickRef.current < minGapMs) {
       setStatusMessage("Patiente quelques secondes avant de relancer une publicité.")
       setStatusType("error")
@@ -553,7 +555,7 @@ export function DashboardClient({
     }
     lastAdClickRef.current = now
 
-    if (!Capacitor.isNativePlatform()) {
+    if (!isNativeApp) {
       return
     }
 
@@ -625,7 +627,7 @@ export function DashboardClient({
     setStatusType(null)
     try {
       // Web: pas encore de comptes Lootably/Revlum → modal "bientôt dispo".
-      if (!Capacitor.isNativePlatform()) {
+      if (!isNativeApp) {
         setOffersSoonOpen(true)
         return
       }
@@ -634,7 +636,7 @@ export function DashboardClient({
     } finally {
       setIsMissionRewarding(false)
     }
-  }, [userId, router, isAuthenticated])
+  }, [userId, router, isAuthenticated, isNativeApp])
 
   const handleCopyReferral = async () => {
     if (!referralCode) return
@@ -652,7 +654,7 @@ export function DashboardClient({
 
   const isFirstVideoEver = (videoLifetimeCount ?? 0) === 0
   const offersUiDisabled = !OFFERS_ENABLED
-  const isNativeApp = Capacitor.isNativePlatform()
+  const isNativeApp = Boolean(isNativeAppProp)
   // Web: on supprime complètement le bloc "Regarder une Vidéo" (pas de mention AdMob/Android).
   const showVideoPointsCard = isNativeApp && (minimalHome || !isVip) && isAuthenticated
   const offersCardOrder = !isNativeApp ? "order-1 sm:order-1" : "order-2 sm:order-2"

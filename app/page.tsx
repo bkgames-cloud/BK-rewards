@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
 import { ENABLE_SUPABASE_REALTIME } from "@/lib/supabase/client"
 import { useAuthContext } from "@/hooks/use-auth-context"
+import { Capacitor } from "@capacitor/core"
 
 export const dynamic = "force-static"
 
@@ -84,6 +85,7 @@ export default function HomePage() {
   const { user, profile, season, isAuthenticated, loading } = useAuthContext()
   const [winners, setWinners] = useState<HomeWinner[]>([])
   const [showAccountDeletedBanner, setShowAccountDeletedBanner] = useState(false)
+  const isNative = typeof window !== "undefined" && Capacitor.isNativePlatform()
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -181,6 +183,7 @@ export default function HomePage() {
               showWelcome={false}
               showRewardsPools={false}
               minimalHome
+              isNativeApp={isNative}
             />
           ) : null}
           {!loading && isAuthenticated && !profile ? (

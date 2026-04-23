@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Info, Lock } from "lucide-react"
+import { Info, Lock, Ticket, Sparkles, RotateCw, Crown } from "lucide-react"
 import { motion } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -94,6 +94,9 @@ export function ConcoursClient() {
   const [scratchUnlocked, setScratchUnlocked] = useState(false)
   const [showScratchModal, setShowScratchModal] = useState(false)
   const [scratchResult, setScratchResult] = useState<number | null>(null)
+  const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const scratchIsDrawingRef = useRef(false)
+  const [scratchScratchedPct, setScratchScratchedPct] = useState(0)
   const [showWheelModal, setShowWheelModal] = useState(false)
   const [wheelBet, setWheelBet] = useState(1)
   const [wheelResult, setWheelResult] = useState<number | null>(null)
@@ -240,6 +243,18 @@ export function ConcoursClient() {
   useEffect(() => {
     setLoading(false)
   }, [])
+
+  // Init scratch layer à l'ouverture du modal
+  useEffect(() => {
+    if (!showScratchModal) return
+    // Laisser le temps au canvas d'être monté
+    const t = window.setTimeout(() => {
+      initScratchCanvas()
+      setScratchScratchedPct(0)
+    }, 30)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showScratchModal])
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -489,6 +504,84 @@ export function ConcoursClient() {
     setScratchUnlocked(false)
     setScratchResult(null)
     setShowScratchModal(false)
+    setScratchScratchedPct(0)
+  }
+
+  const initScratchCanvas = () => {
+    const canvas = scratchCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+
+    const w = canvas.width
+    const h = canvas.height
+
+    // Couche à gratter "premium" (dégradé + bruit léger)
+    const g = ctx.createLinearGradient(0, 0, w, h)
+    g.addColorStop(0, "#2a2a2a")
+    g.addColorStop(0.5, "#5b5b5b")
+    g.addColorStop(1, "#1d1d1d")
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, w, h)
+
+    // Grain subtil
+    const img = ctx.getImageData(0, 0, w, h)
+    for (let i = 0; i < img.data.length; i += 4) {
+      const n = (Math.random() * 22) | 0
+      img.data[i] = Math.min(255, img.data[i] + n)
+      img.data[i + 1] = Math.min(255, img.data[i + 1] + n)
+      img.data[i + 2] = Math.min(255, img.data[i + 2] + n)
+      img.data[i + 3] = 255
+    }
+    ctx.putImageData(img, 0, 0)
+
+    ctx.globalCompositeOperation = "source-over"
+  }
+
+  const computeScratchedPct = () => {
+    const canvas = scratchCanvasRef.current
+    if (!canvas) return 0
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return 0
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    let transparent = 0
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] === 0) transparent += 1
+    }
+    const total = data.length / 4
+    return total > 0 ? Math.round((transparent / total) * 100) : 0
+  }
+
+  const scratchAt = (clientX: number, clientY: number) => {
+    const canvas = scratchCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+    const rect = canvas.getBoundingClientRect()
+    const x = ((clientX - rect.left) / rect.width) * canvas.width
+    const y = ((clientY - rect.top) / rect.height) * canvas.height
+    ctx.globalCompositeOperation = "destination-out"
+    ctx.beginPath()
+    ctx.arc(x, y, 18, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalCompositeOperation = "source-over"
+  }
+
+  const handleScratchPointerDown = (e: React.PointerEvent) => {
+    if (scratchResult !== null) return
+    scratchIsDrawingRef.current = true
+    scratchAt(e.clientX, e.clientY)
+  }
+  const handleScratchPointerMove = (e: React.PointerEvent) => {
+    if (!scratchIsDrawingRef.current) return
+    if (scratchResult !== null) return
+    scratchAt(e.clientX, e.clientY)
+  }
+  const handleScratchPointerUp = () => {
+    if (!scratchIsDrawingRef.current) return
+    scratchIsDrawingRef.current = false
+    const pct = computeScratchedPct()
+    setScratchScratchedPct(pct)
   }
 
   const handleSpinWheel = async () => {
@@ -631,7 +724,11 @@ export function ConcoursClient() {
       setLastVipSlotAt(new Date(nowIso))
       setNow(Date.now())
       await refreshPoints()
-      setSlotMessage(outcome.r > 0 ? `Gagné: +${outcome.r}` : "Perdu")
+      if (outcome.r > 0) {
+        setShowConfetti(true)
+        setTimeout(() => setShowConfetti(false), 2200)
+      }
+      setSlotMessage(outcome.r > 0 ? `Gagné : +${outcome.r} pts` : "Perdu")
       setSlotExtraSpinAvailable(false)
       slotTimeoutRef.current = null
     }, 2000)
@@ -743,33 +840,90 @@ export function ConcoursClient() {
       {/* --- GRILLE DES JEUX STANDARDS --- */}
       <div className="grid gap-4 lg:grid-cols-2">
         {/* CARTE SCRATCH */}
-        <Card className="border border-border/50 bg-[#1a1a1a] p-4">
-          <h3 className="text-lg font-bold">BKG Scratch</h3>
-          <p className="text-sm text-muted-foreground mb-4">Disponibilité : {scratchRemaining}</p>
-          <Button className="w-full" onClick={openScratchUnlock} disabled={!scratchAvailable || !userId}>
-            {scratchAvailable ? "Gratter (Vidéo)" : "Revenez plus tard"}
-          </Button>
+        <Card className="relative overflow-hidden border border-white/10 bg-gradient-to-br from-[#0b0b12] via-[#111827] to-[#0a0a0a] p-4 shadow-[0_18px_55px_rgba(59,130,246,0.10)]">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.22),transparent_55%),radial-gradient(circle_at_80%_25%,rgba(168,85,247,0.20),transparent_60%)]" />
+          <div className="relative">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-widest text-sky-200/80">BK Scratch</p>
+                <h3 className="mt-1 text-xl font-extrabold text-white">Ticket Premium</h3>
+                <p className="mt-2 text-sm text-slate-300">
+                  <span className="inline-flex items-center gap-2">
+                    <Ticket className="h-4 w-4 text-sky-300" aria-hidden />
+                    Disponibilité : <span className="font-semibold text-white/90">{scratchRemaining}</span>
+                  </span>
+                </p>
+              </div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur">
+                <Sparkles className="h-5 w-5 text-sky-300" aria-hidden />
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+              <div className="flex items-center justify-between text-xs text-slate-300">
+                <span>Gain potentiel</span>
+                <span className="font-semibold text-amber-300">0–2 pts</span>
+              </div>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-black/40">
+                <div
+                  className="h-full w-1/3 rounded-full bg-gradient-to-r from-sky-400 via-violet-400 to-amber-300 opacity-80"
+                  aria-hidden
+                />
+              </div>
+            </div>
+
+            <Button
+              className="mt-4 w-full bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-600 text-white shadow-[0_12px_30px_rgba(99,102,241,0.25)] hover:brightness-110"
+              onClick={openScratchUnlock}
+              disabled={!scratchAvailable || !userId}
+            >
+              {scratchAvailable ? "Gratter le ticket" : "Revenez plus tard"}
+            </Button>
+          </div>
         </Card>
 
         {/* CARTE WHEEL */}
-        <Card className="border border-border/50 bg-[#1a1a1a] p-4">
-          <h3 className="text-lg font-bold">BKG Wheel</h3>
-          <p className="text-sm text-muted-foreground mb-4">Points : {userPoints}</p>
-          <p className="text-sm text-muted-foreground mb-4">Disponibilité : {wheelRemaining}</p>
-          <Button className="w-full" onClick={() => setShowWheelModal(true)} disabled={!wheelAvailable || !userId}>
-            Lancer la roue
-          </Button>
+        <Card className="relative overflow-hidden border border-white/10 bg-gradient-to-br from-[#0b0b12] via-[#140b2a] to-[#0a0a0a] p-4 shadow-[0_18px_55px_rgba(168,85,247,0.10)]">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_25%,rgba(168,85,247,0.25),transparent_55%),radial-gradient(circle_at_85%_20%,rgba(245,158,11,0.18),transparent_60%)]" />
+          <div className="relative">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-widest text-violet-200/80">BK Wheel</p>
+                <h3 className="mt-1 text-xl font-extrabold text-white">Roue Lumineuse</h3>
+                <p className="mt-2 text-sm text-slate-300">
+                  <span className="font-semibold text-white/90">{userPoints}</span> points • Disponibilité{" "}
+                  <span className="font-semibold text-white/90">{wheelRemaining}</span>
+                </p>
+              </div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur">
+                <RotateCw className="h-5 w-5 text-violet-300" aria-hidden />
+              </div>
+            </div>
+
+            <Button
+              className="mt-4 w-full bg-gradient-to-r from-violet-600 via-fuchsia-600 to-amber-500 text-white shadow-[0_12px_30px_rgba(168,85,247,0.22)] hover:brightness-110"
+              onClick={() => setShowWheelModal(true)}
+              disabled={!wheelAvailable || !userId}
+            >
+              Lancer la roue
+            </Button>
+          </div>
         </Card>
       </div>
 
       {/* --- ZONE VIP --- */}
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Zone Privée</h3>
-        <Card className="relative border-yellow-500/30 bg-black/40 p-4 overflow-hidden">
-          <p className="text-yellow-500 font-bold mb-2">Slot Machine VIP</p>
-          <p className="text-sm text-muted-foreground mb-4">Disponibilité : {vipSlotRemaining}</p>
+        <Card className="relative overflow-hidden border border-amber-500/20 bg-gradient-to-br from-[#0b0b12] via-[#14110b] to-[#050505] p-4 shadow-[0_18px_55px_rgba(245,158,11,0.10)]">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(245,158,11,0.22),transparent_55%),radial-gradient(circle_at_80%_30%,rgba(59,130,246,0.14),transparent_60%)]" />
+          <div className="relative">
+          <p className="text-amber-300 font-extrabold tracking-wide mb-2 flex items-center gap-2">
+            <Crown className="h-4 w-4" aria-hidden />
+            Slot Machine VIP
+          </p>
+          <p className="text-sm text-slate-300 mb-4">Disponibilité : {vipSlotRemaining}</p>
           <Button
-            className="w-full bg-yellow-500 text-black"
+            className="w-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black shadow-[0_12px_30px_rgba(245,158,11,0.20)] hover:brightness-105"
             onClick={handleSlotSpin}
             disabled={!canPlayVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)}
           >
@@ -779,11 +933,33 @@ export function ConcoursClient() {
             <p className="mt-2 text-center text-xs text-yellow-200/90">{requiredGradeLabel("VIP")}</p>
           )}
           {slotResult && (
-            <p className={`mt-3 text-center text-3xl tracking-widest transition-all duration-150 ${slotSpinning ? "blur-[2px]" : "blur-0"}`}>
-              {slotResult.join(" ")}
-            </p>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {slotResult.map((s, idx) => (
+                <motion.div
+                  key={`${slotSpinSeed}-${idx}-${s}`}
+                  className="flex h-16 items-center justify-center rounded-2xl border border-white/10 bg-black/35 text-3xl shadow-inner backdrop-blur-sm"
+                  animate={
+                    slotSpinning
+                      ? { y: [0, -12, 0], filter: ["blur(0px)", "blur(2px)", "blur(0px)"] }
+                      : { y: 0, scale: [1, 1.06, 1] }
+                  }
+                  transition={slotSpinning ? { duration: 0.35, repeat: Infinity, ease: "linear" } : { duration: 0.25 }}
+                >
+                  {s}
+                </motion.div>
+              ))}
+            </div>
           )}
-          {slotMessage && <p className="mt-2 text-center text-sm text-yellow-200">{slotMessage}</p>}
+          {slotMessage && (
+            <motion.p
+              className="mt-3 text-center text-sm font-semibold text-amber-200"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18 }}
+            >
+              {slotMessage}
+            </motion.p>
+          )}
 
           {!isVip && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/45 backdrop-blur-[2px]">
@@ -795,6 +971,7 @@ export function ConcoursClient() {
               </p>
             </div>
           )}
+          </div>
         </Card>
       </div>
 
@@ -966,46 +1143,134 @@ export function ConcoursClient() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
           data-scratch-ad-watched={isAdWatched ? "1" : "0"}
         >
-          <Card className="w-full max-w-sm p-6 text-center space-y-4 bg-[#111111] border-border/60">
-            <div className="text-2xl font-bold p-6 bg-secondary/30 rounded-xl border-dashed border-2">
-              {scratchResult === null ? "BKG" : (scratchResult === 0 ? "Perdu" : `+${scratchResult} pts`)}
+          <Card className="relative w-full max-w-sm overflow-hidden border border-white/10 bg-gradient-to-br from-[#0b0b12] via-[#111827] to-[#050505] p-6 text-center shadow-[0_18px_55px_rgba(59,130,246,0.12)]">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(59,130,246,0.22),transparent_55%),radial-gradient(circle_at_85%_25%,rgba(168,85,247,0.18),transparent_60%)]" />
+            <div className="relative space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="text-left">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-sky-200/80">BK Scratch</p>
+                  <p className="mt-1 text-sm text-slate-300">Gratte la zone pour révéler ton gain</p>
+                </div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur">
+                  <Ticket className="h-5 w-5 text-sky-300" aria-hidden />
+                </div>
+              </div>
+
+              <div className="relative mx-auto w-[280px] max-w-full">
+                {/* Ticket (fond) */}
+                <div className="rounded-2xl border border-white/10 bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 p-4 shadow-inner">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>Ticket</span>
+                    <span className="font-semibold text-amber-300">Premium</span>
+                  </div>
+                  <div className="mt-3 rounded-xl bg-white/5 p-4">
+                    <p className="text-[11px] uppercase tracking-widest text-slate-400">Résultat</p>
+                    <p className="mt-2 text-3xl font-black text-white">
+                      {scratchResult === null ? "??" : scratchResult === 0 ? "0" : `+${scratchResult}`}
+                      <span className="ml-2 text-base font-semibold text-slate-300">pts</span>
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {scratchResult === null ? `Progression : ${scratchScratchedPct}%` : "Révélé"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Couche à gratter (canvas) */}
+                {scratchResult === null ? (
+                  <canvas
+                    ref={scratchCanvasRef}
+                    width={280}
+                    height={160}
+                    className="absolute inset-0 h-full w-full touch-none select-none rounded-2xl"
+                    onPointerDown={handleScratchPointerDown}
+                    onPointerMove={handleScratchPointerMove}
+                    onPointerUp={handleScratchPointerUp}
+                    onPointerCancel={handleScratchPointerUp}
+                    onPointerLeave={handleScratchPointerUp}
+                    aria-label="Zone à gratter"
+                  />
+                ) : null}
+              </div>
+
+              <div className="grid gap-2">
+                <Button
+                  className="w-full bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-600 text-white shadow-[0_12px_30px_rgba(99,102,241,0.25)] hover:brightness-110"
+                  onClick={() => {
+                    if (scratchResult !== null) {
+                      resetScratch()
+                      return
+                    }
+                    // Révèle automatiquement quand suffisamment gratté
+                    if (scratchScratchedPct >= 55) {
+                      void revealScratch()
+                      return
+                    }
+                    // Sinon laisse le user continuer à gratter
+                  }}
+                  disabled={scratchResult === null && scratchScratchedPct < 55}
+                >
+                  {scratchResult === null ? "Révéler" : "Fermer"}
+                </Button>
+                {scratchResult === null ? (
+                  <p className="text-xs text-slate-400">
+                    Gratte au moins <span className="font-semibold text-white/90">55%</span> pour révéler.
+                  </p>
+                ) : null}
+              </div>
             </div>
-            <Button className="w-full" onClick={scratchResult === null ? revealScratch : resetScratch}>
-              {scratchResult === null ? "Révéler" : "Fermer"}
-            </Button>
           </Card>
         </div>
       )}
 
       {showWheelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <Card className="w-full max-w-sm p-6 text-center bg-[#111111] text-white border-border/60">
-            <h3 className="text-xl font-bold mb-4 font-mono uppercase tracking-tighter text-yellow-500">BKG Wheel</h3>
-            <div
-              className="h-32 flex items-center justify-center text-5xl"
-              style={{
-                transform: `rotate(${wheelAngle}deg)`,
-                transitionProperty: "transform",
-                transitionDuration: "2600ms",
-                transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
-              }}
-            >
-              🎡
-            </div>
-            <div className="mt-4 font-bold text-yellow-400">
-              {wheelResult !== null
-                ? wheelResult === 0
-                  ? "Perdu"
-                  : `Gain : x${wheelResult}`
-                : `Misez ${wheelBet} point${wheelBet > 1 ? "s" : ""}`}
-            </div>
+          <Card className="relative w-full max-w-sm overflow-hidden border border-white/10 bg-gradient-to-br from-[#0b0b12] via-[#140b2a] to-[#050505] p-6 text-center text-white shadow-[0_18px_55px_rgba(168,85,247,0.14)]">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(168,85,247,0.25),transparent_55%),radial-gradient(circle_at_85%_25%,rgba(245,158,11,0.18),transparent_60%)]" />
+            <div className="relative">
+              <h3 className="text-xl font-extrabold tracking-tight text-white">BK Wheel</h3>
+              <p className="mt-1 text-sm text-slate-300">Bordures lumineuses • rotation fluide</p>
+
+              <div className="mt-5 flex items-center justify-center">
+                <div className="relative">
+                  {/* Glow ring */}
+                  <div className="absolute -inset-3 rounded-full bg-[conic-gradient(from_180deg,rgba(168,85,247,0.45),rgba(59,130,246,0.35),rgba(245,158,11,0.35),rgba(168,85,247,0.45))] blur-xl opacity-60" />
+                  <div className="relative h-44 w-44 rounded-full border border-white/10 bg-black/35 p-2 shadow-inner backdrop-blur">
+                    {/* Pointer */}
+                    <div className="absolute -top-2 left-1/2 z-10 h-0 w-0 -translate-x-1/2 border-x-[10px] border-b-[16px] border-x-transparent border-b-amber-300 drop-shadow-[0_6px_18px_rgba(245,158,11,0.45)]" />
+                    <div
+                      className="relative h-full w-full rounded-full border border-white/10 bg-[conic-gradient(from_90deg,#7c3aed,#2563eb,#f59e0b,#7c3aed)] shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
+                      style={{
+                        transform: `rotate(${wheelAngle}deg)`,
+                        transitionProperty: "transform",
+                        transitionDuration: "2600ms",
+                        transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
+                      }}
+                    >
+                      <div className="absolute inset-2 rounded-full bg-black/40 backdrop-blur-sm" />
+                      <div className="absolute inset-0 grid place-items-center">
+                        <div className="grid h-14 w-14 place-items-center rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur">
+                          <Sparkles className="h-6 w-6 text-amber-300" aria-hidden />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 font-bold text-amber-300">
+                {wheelResult !== null
+                  ? wheelResult === 0
+                    ? "Perdu"
+                    : `Gain : x${wheelResult}`
+                  : `Mise : ${wheelBet} point${wheelBet > 1 ? "s" : ""}`}
+              </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {[1, 2, 3].map((bet) => (
                 <Button
                   key={bet}
                   type="button"
                   variant={wheelBet === bet ? "default" : "outline"}
-                  className="w-full"
+                  className="w-full border-white/15 bg-white/5 text-white hover:bg-white/10"
                   onClick={() => setWheelBet(bet)}
                   disabled={wheelSpinning}
                 >
@@ -1013,8 +1278,17 @@ export function ConcoursClient() {
                 </Button>
               ))}
             </div>
-            <Button className="w-full mt-4 bg-yellow-600 hover:bg-yellow-500" onClick={handleSpinWheel} disabled={wheelSpinning}>Lancer la roue</Button>
-            <Button variant="ghost" className="w-full mt-2 text-slate-500" onClick={() => setShowWheelModal(false)}>Fermer</Button>
+            <Button
+              className="mt-4 w-full bg-gradient-to-r from-violet-600 via-fuchsia-600 to-amber-500 text-white shadow-[0_12px_30px_rgba(168,85,247,0.22)] hover:brightness-110"
+              onClick={handleSpinWheel}
+              disabled={wheelSpinning}
+            >
+              {wheelSpinning ? "Rotation..." : "Lancer la roue"}
+            </Button>
+            <Button variant="ghost" className="w-full mt-2 text-slate-300/70 hover:text-white" onClick={() => setShowWheelModal(false)}>
+              Fermer
+            </Button>
+            </div>
           </Card>
         </div>
       )}
