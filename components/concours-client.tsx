@@ -75,9 +75,9 @@ export function ConcoursClient() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   const [isOverlayOpen, setIsOverlayOpen] = useState(false)
-  const [videoAction, setVideoAction] = useState<"scratch" | "wheel-rescue" | null>(null)
+  const [videoAction, setVideoAction] = useState<"scratch" | null>(null)
   /** Toujours à jour avant AdMob / overlay : `handleVideoComplete` serait sinon capturé avec un `videoAction` obsolète (→ 2e vidéo nécessaire). */
-  const videoActionRef = useRef<"scratch" | "wheel-rescue" | null>(null)
+  const videoActionRef = useRef<"scratch" | null>(null)
   const [adGateStatus, setAdGateStatus] = useState<string | null>(null)
   const [adGateCanRetry, setAdGateCanRetry] = useState(false)
   const [userPoints, setUserPoints] = useState(0)
@@ -99,13 +99,13 @@ export function ConcoursClient() {
   const [scratchScratchedPct, setScratchScratchedPct] = useState(0)
   const [showWheelModal, setShowWheelModal] = useState(false)
   const [wheelBet, setWheelBet] = useState(1)
-  const [wheelResult, setWheelResult] = useState<number | null>(null)
+  const [wheelOutcome, setWheelOutcome] = useState<0 | 1 | 3 | null>(null)
   const [wheelAngle, setWheelAngle] = useState(0)
   const [wheelSpinning, setWheelSpinning] = useState(false)
-  const [showWheelRescueDialog, setShowWheelRescueDialog] = useState(false)
-  const [pendingRescueBet, setPendingRescueBet] = useState<number | null>(null)
   const [infoModal, setInfoModal] = useState<"scratch" | "wheel" | null>(null)
   const [slotSpinning, setSlotSpinning] = useState(false)
+  const [slotBet, setSlotBet] = useState<1 | 2 | 3>(1)
+  const [slotStopPhase, setSlotStopPhase] = useState<0 | 1 | 2 | 3>(0)
   const [slotResult, setSlotResult] = useState<string[] | null>(null)
   const [slotMessage, setSlotMessage] = useState<string | null>(null)
   const [slotExtraSpinAvailable, setSlotExtraSpinAvailable] = useState(false)
@@ -433,27 +433,6 @@ export function ConcoursClient() {
       setShowScratchModal(true)
       return
     }
-
-    if (gateAction === "wheel-rescue" && pendingRescueBet && userId) {
-      try {
-        const ok = await postUpdatePoints({ pointsToAdd: pendingRescueBet })
-        if (ok) {
-          setPendingRescueBet(null)
-          setShowWheelRescueDialog(false)
-          await refreshPoints()
-          toast({
-            title: "Mise récupérée !",
-            description: "Votre mise a été recréditée.",
-          })
-        }
-      } catch {
-        toast({
-          title: "Erreur",
-          description: "Impossible de récupérer la mise.",
-          variant: "destructive",
-        })
-      }
-    }
   }
 
   // --- 3. LOGIQUE DES JEUX (SCRATCH, WHEEL, SLOTS, ARENA) ---
@@ -593,6 +572,7 @@ export function ConcoursClient() {
 
     const nowIso = new Date().toISOString()
     try {
+      setWheelOutcome(null)
       const ok = await postUpdatePoints({ pointsToAdd: -wheelBet, timestamps: { last_wheel_at: nowIso } })
       if (!ok) return
       setUserPoints(userPoints - wheelBet)
@@ -603,26 +583,26 @@ export function ConcoursClient() {
       setWheelAngle(nextWheelAngle)
       
       const roll = Math.random()
-      /** 0 = Perdu ; 1–3 = multiplicateur de gain (x1, x2, x3). */
-      const multiplier = roll < 0.5 ? 0 : roll < 0.8 ? 1 : roll < 0.95 ? 2 : 3
+      /** 0 = PERDU ; 1 = RÉCUPÉRÉ ; 3 = JACKPOT */
+      const multiplier: 0 | 1 | 3 = roll < 0.58 ? 0 : roll < 0.92 ? 1 : 3
 
       setTimeout(async () => {
         setWheelSpinning(false)
-        setWheelResult(multiplier)
+        setWheelOutcome(multiplier)
         if (multiplier === 0) {
-          setPendingRescueBet(wheelBet)
-          setShowWheelRescueDialog(true)
-        } else {
-          await postUpdatePoints({ pointsToAdd: wheelBet * multiplier })
-          await refreshPoints()
-          setShowConfetti(true)
-          setTimeout(() => setShowConfetti(false), 2500)
+          soundService.playClickSound()
+          return
         }
+        await postUpdatePoints({ pointsToAdd: wheelBet * multiplier })
+        await refreshPoints()
+        soundService.playSuccess()
+        setShowConfetti(true)
+        setTimeout(() => setShowConfetti(false), 2500)
       }, 1500)
     } catch (e) { console.error(e) }
   }
 
-  const runRewardedGate = async (action: "scratch" | "wheel-rescue") => {
+  const runRewardedGate = async (action: "scratch") => {
     if (!userId) {
       toast({ title: "Connexion requise", variant: "destructive" })
       return
@@ -639,10 +619,8 @@ export function ConcoursClient() {
       return
     }
 
-    if (action === "scratch") {
-      scratchPostAdHandledRef.current = false
-      scratchAdsWatchedRef.current = 0
-    }
+    scratchPostAdHandledRef.current = false
+    scratchAdsWatchedRef.current = 0
     videoActionRef.current = action
     setVideoAction(action)
     setAdGateStatus("Préparation de la vidéo...")
@@ -650,9 +628,7 @@ export function ConcoursClient() {
     try {
       const result = await showRewardVideo({
         onRewardGranted: async () => {
-          if (action === "scratch") {
-            scratchAdsWatchedRef.current = SCRATCH_REWARDED_ADS_REQUIRED
-          }
+          scratchAdsWatchedRef.current = SCRATCH_REWARDED_ADS_REQUIRED
           await handleVideoComplete()
         },
       })
@@ -685,13 +661,31 @@ export function ConcoursClient() {
 
   const handleSlotSpin = async () => {
     if (!userId || !isVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)) return
+    if (userPoints < slotBet) {
+      toast({ title: "Points insuffisants", description: "Augmente ton solde ou baisse la mise.", variant: "destructive" })
+      return
+    }
     
     setSlotSpinning(true)
     setSlotMessage(null)
     setSlotSpinSeed((s) => s + 1)
+    setSlotStopPhase(0)
+    setSlotResult(null)
+
+    // Débit immédiat de la mise
+    const nowIso = new Date().toISOString()
+    const debitOk = await postUpdatePoints({ pointsToAdd: -slotBet, timestamps: { last_vip_slot_at: nowIso } })
+    if (!debitOk) {
+      setSlotSpinning(false)
+      setSlotMessage("Erreur: impossible d'enregistrer la partie.")
+      return
+    }
+    setUserPoints((p) => p - slotBet)
+
+    const spinSymbols: Array<"🍒" | "💎" | "7️⃣" | "🔔"> = ["🍒", "💎", "7️⃣", "🔔"]
     const roll = Math.random()
-    const outcome = roll < 0.01 ? { s: "💎", r: 250 } : roll < 0.06 ? { s: "💰", r: 100 } : roll < 0.21 ? { s: "🎁", r: 20 } : roll < 0.41 ? { s: "🎫", r: 5 } : { s: "❌", r: 0 }
-    const spinSymbols = ["💎", "💰", "🎁", "🎫", "❌"]
+    const multiplier: 0 | 1 | 3 = roll < 0.62 ? 0 : roll < 0.93 ? 1 : 3
+    const finalSymbol = multiplier === 3 ? "7️⃣" : multiplier === 1 ? "💎" : (spinSymbols[Math.floor(Math.random() * spinSymbols.length)] ?? "🍒")
 
     if (slotIntervalRef.current) window.clearInterval(slotIntervalRef.current)
     if (slotTimeoutRef.current) window.clearTimeout(slotTimeoutRef.current)
@@ -704,34 +698,44 @@ export function ConcoursClient() {
         spinSymbols[(frame + 2) % spinSymbols.length],
         spinSymbols[(frame + 3) % spinSymbols.length],
       ])
-    }, 120)
+    }, 55)
+
+    const stopDelaysMs = [700, 1000, 1300] as const
+    stopDelaysMs.forEach((delay, idx) => {
+      window.setTimeout(() => {
+        setSlotStopPhase((p) => (p < (idx + 1) ? ((idx + 1) as 1 | 2 | 3) : p))
+        soundService.playClickSound()
+        setSlotResult((prev) => {
+          const next: string[] = prev ? [...prev] : [spinSymbols[0], spinSymbols[1], spinSymbols[2]]
+          next[idx] = finalSymbol
+          return next
+        })
+      }, delay)
+    })
 
     slotTimeoutRef.current = window.setTimeout(async () => {
       if (slotIntervalRef.current) {
         window.clearInterval(slotIntervalRef.current)
         slotIntervalRef.current = null
       }
-      const nowIso = new Date().toISOString()
-      const ok = await postUpdatePoints({ pointsToAdd: outcome.r, timestamps: { last_vip_slot_at: nowIso } })
-      if (!ok) {
-        setSlotSpinning(false)
-        setSlotMessage("Erreur: impossible d'enregistrer la partie.")
-        slotTimeoutRef.current = null
-        return
+
+      // Créditer le gain selon multiplicateur (0x, 1x, 3x)
+      if (multiplier !== 0) {
+        await postUpdatePoints({ pointsToAdd: slotBet * multiplier })
       }
-      setSlotResult([outcome.s, outcome.s, outcome.s])
+      setSlotResult([finalSymbol, finalSymbol, finalSymbol])
       setSlotSpinning(false)
       setLastVipSlotAt(new Date(nowIso))
       setNow(Date.now())
       await refreshPoints()
-      if (outcome.r > 0) {
+      if (multiplier === 3) {
         setShowConfetti(true)
         setTimeout(() => setShowConfetti(false), 2200)
       }
-      setSlotMessage(outcome.r > 0 ? `Gagné : +${outcome.r} pts` : "Perdu")
+      setSlotMessage(multiplier === 0 ? "PERDU" : multiplier === 1 ? `RÉCUPÉRÉ (x1) — mise rendue` : `JACKPOT (x3) — +${slotBet * 2} pts net`)
       setSlotExtraSpinAvailable(false)
       slotTimeoutRef.current = null
-    }, 2000)
+    }, 1500)
   }
 
   const handleVipAdSimulation = () => {
@@ -741,6 +745,21 @@ export function ConcoursClient() {
       setSlotExtraSpinAvailable(true)
     }, 5000)
   }
+
+  const WHEEL_SEGMENTS: Array<"PERDU" | "x1" | "x3"> = [
+    "PERDU",
+    "x1",
+    "PERDU",
+    "x1",
+    "PERDU",
+    "x1",
+    "PERDU",
+    "x3",
+    "PERDU",
+    "x1",
+    "PERDU",
+    "PERDU",
+  ]
 
   const startTapArena = () => {
     if (!isVipPlus || tapArenaActive || isTapTapSessionClosed) return
@@ -796,7 +815,7 @@ export function ConcoursClient() {
 
   // --- 4. GESTION DES REFS ---
   const videoContextLabel = videoAction === "scratch" ? "BKG Scratch" : "BKG Wheel"
-  const videoRewardLabel = videoAction === "scratch" ? "Jeu débloqué" : "Récupérer la mise"
+  const videoRewardLabel = "Jeu débloqué"
 
   if (loading) return <div className="p-4 text-white">Chargement...</div>
 
@@ -922,32 +941,55 @@ export function ConcoursClient() {
             Slot Machine VIP
           </p>
           <p className="text-sm text-slate-300 mb-4">Disponibilité : {vipSlotRemaining}</p>
+          <div className="mb-3 grid grid-cols-3 gap-2">
+            {([1, 2, 3] as const).map((bet) => (
+              <Button
+                key={bet}
+                type="button"
+                variant={slotBet === bet ? "default" : "outline"}
+                className="w-full border-amber-400/20 bg-black/30 text-amber-50 hover:bg-black/40"
+                onClick={() => setSlotBet(bet)}
+                disabled={slotSpinning}
+              >
+                Mise {bet}
+              </Button>
+            ))}
+          </div>
           <Button
             className="w-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black shadow-[0_12px_30px_rgba(245,158,11,0.20)] hover:brightness-105"
             onClick={handleSlotSpin}
-            disabled={!canPlayVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)}
+            disabled={!canPlayVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable) || userPoints < slotBet}
           >
             {slotSpinning ? "Rotation..." : "Tirer le levier"}
           </Button>
+          {userPoints < slotBet ? (
+            <p className="mt-2 text-center text-xs font-semibold text-rose-200/90">
+              Points insuffisants pour cette mise.
+            </p>
+          ) : null}
           {!canPlayVip && (
             <p className="mt-2 text-center text-xs text-yellow-200/90">{requiredGradeLabel("VIP")}</p>
           )}
           {slotResult && (
-            <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="relative mt-4 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-black/55 to-black/30 p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05),0_18px_60px_rgba(0,0,0,0.45)]">
+              {/* Cadre métallique */}
+              <div className="pointer-events-none absolute inset-0 rounded-3xl bg-[linear-gradient(135deg,rgba(245,158,11,0.28),rgba(255,255,255,0.06),rgba(59,130,246,0.12))] opacity-70" />
+              <div className="relative grid grid-cols-3 gap-2">
               {slotResult.map((s, idx) => (
                 <motion.div
                   key={`${slotSpinSeed}-${idx}-${s}`}
                   className="flex h-16 items-center justify-center rounded-2xl border border-white/10 bg-black/35 text-3xl shadow-inner backdrop-blur-sm"
                   animate={
-                    slotSpinning
-                      ? { y: [0, -12, 0], filter: ["blur(0px)", "blur(2px)", "blur(0px)"] }
-                      : { y: 0, scale: [1, 1.06, 1] }
+                    slotSpinning && idx >= slotStopPhase
+                      ? { y: [0, -18, 0], filter: ["blur(1px)", "blur(3px)", "blur(1px)"] }
+                      : { y: 0, scale: [1, 1.06, 1], filter: "blur(0px)" }
                   }
-                  transition={slotSpinning ? { duration: 0.35, repeat: Infinity, ease: "linear" } : { duration: 0.25 }}
+                  transition={slotSpinning && idx >= slotStopPhase ? { duration: 0.18, repeat: Infinity, ease: "linear" } : { duration: 0.22 }}
                 >
                   {s}
                 </motion.div>
               ))}
+              </div>
             </div>
           )}
           {slotMessage && (
@@ -1065,46 +1107,7 @@ export function ConcoursClient() {
         rewardLabel={videoRewardLabel}
       />
 
-      <Dialog open={showWheelRescueDialog} onOpenChange={setShowWheelRescueDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Récupérer votre mise ?</DialogTitle>
-            <DialogDescription>Voulez-vous récupérer votre mise ?</DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setPendingRescueBet(null)
-                setShowWheelRescueDialog(false)
-              }}
-            >
-              Non
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                if (!userId) return
-                setShowWheelRescueDialog(false)
-                const isAndroidApp =
-                  Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android"
-                if (!isAndroidApp) {
-                  toast({
-                    title: "Récupérer la mise",
-                    description:
-                      "La récupération via une vidéo récompensée est disponible sur l’app Android (AdMob).",
-                  })
-                  return
-                }
-                void runRewardedGate("wheel-rescue")
-              }}
-            >
-              Oui, regarder une vidéo
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Plus de récupération de mise : si PERDU, c'est PERDU. */}
 
       {adGateStatus ? (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4">
@@ -1113,7 +1116,7 @@ export function ConcoursClient() {
             <div className="mt-4 flex gap-2">
               <Button
                 className="flex-1"
-                onClick={() => void runRewardedGate(videoAction ?? "scratch")}
+                onClick={() => void runRewardedGate("scratch")}
                 disabled={!adGateCanRetry}
               >
                 Réessayer
@@ -1246,22 +1249,50 @@ export function ConcoursClient() {
                         transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
                       }}
                     >
-                      <div className="absolute inset-2 rounded-full bg-black/40 backdrop-blur-sm" />
-                      <div className="absolute inset-0 grid place-items-center">
-                        <div className="grid h-14 w-14 place-items-center rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur">
-                          <Sparkles className="h-6 w-6 text-amber-300" aria-hidden />
-                        </div>
+                      {/* Segments glow + profondeur */}
+                      <div className="absolute inset-0 rounded-full shadow-[inset_0_0_35px_rgba(0,0,0,0.6)]" />
+                      {/* Rim labels (PERDU / x1 / x3) */}
+                      <div className="pointer-events-none absolute inset-0">
+                        {WHEEL_SEGMENTS.map((label, i) => {
+                          const angle = (360 / WHEEL_SEGMENTS.length) * i
+                          return (
+                            <div
+                              key={`${label}-${i}`}
+                              className="absolute left-1/2 top-1/2"
+                              style={{
+                                transform: `rotate(${angle}deg) translateY(-74px) rotate(${-angle}deg)`,
+                              }}
+                            >
+                              <div
+                                className={cn(
+                                  "select-none rounded-full px-2 py-0.5 text-[10px] font-extrabold tracking-wider shadow-sm",
+                                  label === "PERDU"
+                                    ? "bg-black/45 text-slate-200 ring-1 ring-white/10"
+                                    : label === "x1"
+                                      ? "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/30"
+                                      : "bg-amber-500/18 text-amber-200 ring-1 ring-amber-400/35",
+                                )}
+                              >
+                                {label}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
+                      {/* Centre vide (sans texte) */}
+                      <div className="absolute inset-6 rounded-full bg-black/40 backdrop-blur-sm" />
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="mt-5 font-bold text-amber-300">
-                {wheelResult !== null
-                  ? wheelResult === 0
-                    ? "Perdu"
-                    : `Gain : x${wheelResult}`
+                {wheelOutcome !== null
+                  ? wheelOutcome === 0
+                    ? "PERDU (0x)"
+                    : wheelOutcome === 1
+                      ? "RÉCUPÉRÉ (x1)"
+                      : "JACKPOT (x3)"
                   : `Mise : ${wheelBet} point${wheelBet > 1 ? "s" : ""}`}
               </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
@@ -1281,10 +1312,15 @@ export function ConcoursClient() {
             <Button
               className="mt-4 w-full bg-gradient-to-r from-violet-600 via-fuchsia-600 to-amber-500 text-white shadow-[0_12px_30px_rgba(168,85,247,0.22)] hover:brightness-110"
               onClick={handleSpinWheel}
-              disabled={wheelSpinning}
+              disabled={wheelSpinning || userPoints < wheelBet}
             >
               {wheelSpinning ? "Rotation..." : "Lancer la roue"}
             </Button>
+            {userPoints < wheelBet ? (
+              <p className="mt-2 text-center text-xs font-semibold text-rose-200/90">
+                Points insuffisants pour cette mise.
+              </p>
+            ) : null}
             <Button variant="ghost" className="w-full mt-2 text-slate-300/70 hover:text-white" onClick={() => setShowWheelModal(false)}>
               Fermer
             </Button>
