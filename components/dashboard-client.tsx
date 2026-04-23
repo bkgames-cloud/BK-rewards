@@ -54,6 +54,7 @@ export function DashboardClient({
   minimalHome = false,
 }: DashboardClientProps) {
   const { toast } = useToast()
+  const [offersSoonOpen, setOffersSoonOpen] = useState(false)
   const [points, setPoints] = useState(profile?.points ?? 0)
   const [isVip, setIsVip] = useState(false)
   const [isVipPlus, setIsVipPlus] = useState(false)
@@ -401,7 +402,7 @@ export function DashboardClient({
     void loadRewardPreviewCounts()
   }, [userId, isAuthenticated, hasValidUserId])
 
-  // Quotas AdMob (visuel) : 5/h et 25/j (ne change pas les règles serveur).
+  // Quotas publicités (visuel) : 5/h et 25/j (ne change pas les règles serveur).
   useEffect(() => {
     const run = async () => {
       if (!hasValidUserId || !isAuthenticated || !userId) return
@@ -623,15 +624,13 @@ export function DashboardClient({
     setStatusMessage(null)
     setStatusType(null)
     try {
-      // Sur le bundle web (Capacitor), on ne doit pas ouvrir de site externe.
-      // L'écran natif WebView (Expo) gère Lootably/Revlum côté app.
-      if (Capacitor.isNativePlatform()) {
-        setStatusMessage("Les offres sont disponibles dans l’app mobile (écran interne).")
-        setStatusType("error")
+      // Web: pas encore de comptes Lootably/Revlum → modal "bientôt dispo".
+      if (!Capacitor.isNativePlatform()) {
+        setOffersSoonOpen(true)
         return
       }
-      // Web: conserver un parcours interne (pas de redirection externe).
-      router.push("/offers")
+      setStatusMessage("Offres disponibles dans l’écran interne de l’app.")
+      setStatusType("error")
     } finally {
       setIsMissionRewarding(false)
     }
@@ -652,9 +651,10 @@ export function DashboardClient({
   // Ancien système de participation aux cadeaux supprimé
 
   const isFirstVideoEver = (videoLifetimeCount ?? 0) === 0
-  const showVideoPointsCard = (minimalHome || !isVip) && isAuthenticated
   const offersUiDisabled = !OFFERS_ENABLED
   const isNativeApp = Capacitor.isNativePlatform()
+  // Web: on supprime complètement le bloc "Regarder une Vidéo" (pas de mention AdMob/Android).
+  const showVideoPointsCard = isNativeApp && (minimalHome || !isVip) && isAuthenticated
   const offersCardOrder = !isNativeApp ? "order-1 sm:order-1" : "order-2 sm:order-2"
   const videoCardOrder = !isNativeApp ? "order-2 sm:order-2" : "order-1 sm:order-1"
 
@@ -773,75 +773,13 @@ export function DashboardClient({
       {showWallet && isAuthenticated && (
         <div
           className={cn(
-            "grid gap-3",
-            showVideoPointsCard ? "sm:grid-cols-2" : "sm:grid-cols-1",
+            "grid gap-3 sm:grid-cols-1",
           )}
         >
-          {showVideoPointsCard && (
-            <Card
-              className={cn(
-                "border border-sky-500/35 bg-gradient-to-br from-sky-950/70 via-card to-card shadow-lg",
-                videoCardOrder,
-              )}
-            >
-              <CardContent className="flex flex-col gap-3 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-sky-300">
-                      <Play className="h-5 w-5" fill="currentColor" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-semibold leading-tight text-foreground">Regarder une Vidéo</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {isNativeApp ? (
-                          isFirstVideoEver ? (
-                            "Bonus : +2 points pour la 1ère vidéo !"
-                          ) : (
-                            "Chaque vidéo complétée rapporte +1 point."
-                          )
-                        ) : (
-                          "Les vidéos récompensées (AdMob) sont disponibles sur l&apos;application Android."
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  {isNativeApp ? (
-                    <span className="shrink-0 rounded-full bg-sky-500/25 px-2.5 py-1 text-xs font-bold text-sky-100">
-                      {isFirstVideoEver ? "+2 pts" : "+1 pt"}
-                    </span>
-                  ) : null}
-                </div>
-                {isNativeApp ? (
-                  <>
-                    <Button
-                      type="button"
-                      onClick={() => void handleWatchRewardedAd()}
-                      disabled={!isAuthenticated || isRewarding || isShowingRewardedAd}
-                      className="w-full bg-gradient-to-r from-(--color-sky-start) to-(--color-sky-end) text-primary-foreground"
-                    >
-                      {isShowingRewardedAd
-                        ? "Chargement..."
-                        : minimalHome
-                          ? "Lancer la vidéo"
-                          : "Regarder une vidéo"}
-                    </Button>
-                    <p className="text-xs text-muted-foreground">
-                      Pubs restantes :{" "}
-                      <span className="font-medium text-foreground">{Math.max(0, 25 - adsUsedToday)}</span>
-                      /25 aujourd&apos;hui •{" "}
-                      <span className="font-medium text-foreground">{Math.max(0, 5 - adsUsedThisHour)}</span>
-                      /5 cette heure
-                    </p>
-                  </>
-                ) : null}
-              </CardContent>
-            </Card>
-          )}
-
           <Card
             className={cn(
               "relative border border-violet-500/35 bg-gradient-to-br from-violet-950/60 via-card to-card shadow-lg",
-              !showVideoPointsCard && "sm:col-span-1 sm:max-w-lg sm:mx-auto w-full",
+              !showVideoPointsCard && "w-full",
               offersCardOrder,
             )}
           >
@@ -882,6 +820,22 @@ export function DashboardClient({
           </Card>
         </div>
       )}
+
+      <Dialog open={offersSoonOpen} onOpenChange={setOffersSoonOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Offres bientôt disponibles</DialogTitle>
+            <DialogDescription>
+              Offres bientôt disponibles sur le Web !
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setOffersSoonOpen(false)}>
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Suppression des redirections vers des offres web externes depuis l'app */}
 
