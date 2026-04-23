@@ -16,7 +16,6 @@ import { addInAppNotification } from "@/lib/in-app-notifications"
 import { RewardPoolsGrid } from "@/components/reward-pools-grid"
 import { showRewardVideo } from "@/lib/admob-rewarded"
 import { cn } from "@/lib/utils"
-import { getAndroidApkDownloadUrl } from "@/lib/android-app-promo"
 import { openExternalUrl } from "@/lib/open-external-url"
 import { updateUserPoints } from "@/lib/update-user-points"
 import {
@@ -654,9 +653,6 @@ export function DashboardClient({
 
   const isFirstVideoEver = (videoLifetimeCount ?? 0) === 0
   const showVideoPointsCard = (minimalHome || !isVip) && isAuthenticated
-  const androidApkUrl = getAndroidApkDownloadUrl()
-  const androidAppLandingUrl =
-    androidApkUrl.trim() !== "" ? androidApkUrl : "https://www.bkg-rewards.com"
   const offersUiDisabled = !OFFERS_ENABLED
   const isNativeApp = Capacitor.isNativePlatform()
   const offersCardOrder = !isNativeApp ? "order-1 sm:order-1" : "order-2 sm:order-2"
@@ -837,16 +833,7 @@ export function DashboardClient({
                       /5 cette heure
                     </p>
                   </>
-                ) : (
-                  <Button
-                    asChild
-                    className="w-full bg-gradient-to-r from-(--color-sky-start) to-(--color-sky-end) text-primary-foreground"
-                  >
-                    <a href={androidAppLandingUrl} target="_blank" rel="noopener noreferrer">
-                      Disponible sur l&apos;app Android
-                    </a>
-                  </Button>
-                )}
+                ) : null}
               </CardContent>
             </Card>
           )}
@@ -1005,85 +992,7 @@ export function DashboardClient({
         </p>
       )}
 
-      <Dialog
-        open={videoWebPromoOpen}
-        onOpenChange={(open) => {
-          setVideoWebPromoOpen(open)
-          if (!open) setVideoWebPromoKind(null)
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          {videoWebPromoKind === "desktop" ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Boostez vos gains !</DialogTitle>
-                <DialogDescription className="text-base leading-relaxed text-foreground/90">
-                  Téléchargez notre application Android pour regarder des vidéos et gagner des points illimités.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
-                <Button type="button" variant="outline" onClick={() => setVideoWebPromoOpen(false)}>
-                  Fermer
-                </Button>
-                <Button
-                  type="button"
-                  className="bg-gradient-to-r from-(--color-sky-start) to-(--color-sky-end) text-primary-foreground"
-                  onClick={() => {
-                    if (!androidApkUrl) {
-                      addInAppNotification("Configurez NEXT_PUBLIC_ANDROID_APK_URL (lien APK ou page de téléchargement).")
-                      return
-                    }
-                    if (!Capacitor.isNativePlatform()) {
-                      void openExternalUrl(androidApkUrl)
-                    }
-                  }}
-                >
-                  Télécharger l&apos;APK
-                </Button>
-              </DialogFooter>
-            </>
-          ) : videoWebPromoKind === "mobile_web" ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Disponible prochainement</DialogTitle>
-                <DialogDescription>
-                  Les vidéos récompensées dans le navigateur mobile arrivent bientôt. Installez l&apos;application
-                  Android pour regarder des pubs et cumuler des points.
-                </DialogDescription>
-              </DialogHeader>
-              <div
-                className="relative overflow-hidden rounded-xl border border-border/50 bg-gradient-to-br from-slate-800/80 to-slate-900/90 py-10 text-center shadow-inner"
-                aria-hidden
-              >
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  Publicité
-                </p>
-                <p className="mt-2 px-4 text-sm text-muted-foreground">
-                  Espace réservé — interstitielle à brancher (ex. AdSense / partenaire).
-                </p>
-                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,transparent_40%,rgba(255,255,255,0.05)_50%,transparent_60%)]" />
-              </div>
-              <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
-                <Button type="button" variant="ghost" size="sm" onClick={() => setVideoWebPromoOpen(false)}>
-                  Fermer
-                </Button>
-                {androidApkUrl ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      if (!Capacitor.isNativePlatform()) void openExternalUrl(androidApkUrl)
-                    }}
-                  >
-                    Télécharger l&apos;APK
-                  </Button>
-                ) : null}
-              </DialogFooter>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      {/* Suppression des promotions APK / redirections Android sur le Web */}
     </div>
   )
 }
