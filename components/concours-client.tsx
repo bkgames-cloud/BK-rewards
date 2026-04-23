@@ -330,19 +330,28 @@ export function ConcoursClient() {
   useEffect(() => {
     if (!ENABLE_SUPABASE_REALTIME) return
     if (!userId) return
-    const supabase = createClient()
-    const channel = supabase
-      .channel(`profiles-points-${userId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${userId}` },
-        () => {
-          void refreshPoints(userId)
-        },
-      )
-      .subscribe()
-    return () => {
-      void supabase.removeChannel(channel)
+    const supabaseAny = createClient() as any
+    try {
+      const baseChannel = supabaseAny?.channel?.(`profiles-points-${userId}`)
+      if (!baseChannel || typeof baseChannel.on !== "function" || typeof baseChannel.subscribe !== "function") {
+        return
+      }
+      const channel = baseChannel
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${userId}` },
+          () => {
+            void refreshPoints(userId)
+          },
+        )
+        .subscribe()
+      return () => {
+        try {
+          void supabaseAny?.removeChannel?.(channel)
+        } catch {}
+      }
+    } catch {
+      return
     }
   }, [userId])
 
@@ -672,16 +681,6 @@ export function ConcoursClient() {
     setSlotStopPhase(0)
     setSlotResult(null)
 
-    // Débit immédiat de la mise
-    const nowIso = new Date().toISOString()
-    const debitOk = await postUpdatePoints({ pointsToAdd: -slotBet, timestamps: { last_vip_slot_at: nowIso } })
-    if (!debitOk) {
-      setSlotSpinning(false)
-      setSlotMessage("Erreur: impossible d'enregistrer la partie.")
-      return
-    }
-    setUserPoints((p) => p - slotBet)
-
     const spinSymbols: Array<"🍒" | "💎" | "7️⃣" | "🔔"> = ["🍒", "💎", "7️⃣", "🔔"]
     const roll = Math.random()
     const multiplier: 0 | 1 | 3 = roll < 0.62 ? 0 : roll < 0.93 ? 1 : 3
@@ -719,20 +718,25 @@ export function ConcoursClient() {
         slotIntervalRef.current = null
       }
 
-      // Créditer le gain selon multiplicateur (0x, 1x, 3x)
-      if (multiplier !== 0) {
-        await postUpdatePoints({ pointsToAdd: slotBet * multiplier })
+      const nowIso = new Date().toISOString()
+      const winPoints = slotBet * multiplier
+      const ok = await postUpdatePoints({ pointsToAdd: winPoints, timestamps: { last_vip_slot_at: nowIso } })
+      if (!ok) {
+        setSlotSpinning(false)
+        setSlotMessage("Erreur: impossible d'enregistrer la partie.")
+        slotTimeoutRef.current = null
+        return
       }
       setSlotResult([finalSymbol, finalSymbol, finalSymbol])
       setSlotSpinning(false)
       setLastVipSlotAt(new Date(nowIso))
       setNow(Date.now())
       await refreshPoints()
-      if (multiplier === 3) {
+      if (winPoints > 0) {
         setShowConfetti(true)
         setTimeout(() => setShowConfetti(false), 2200)
       }
-      setSlotMessage(multiplier === 0 ? "PERDU" : multiplier === 1 ? `RÉCUPÉRÉ (x1) — mise rendue` : `JACKPOT (x3) — +${slotBet * 2} pts net`)
+      setSlotMessage(winPoints > 0 ? `Gagné : +${winPoints} pts` : "Perdu")
       setSlotExtraSpinAvailable(false)
       slotTimeoutRef.current = null
     }, 1500)
