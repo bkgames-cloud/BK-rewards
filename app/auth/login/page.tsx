@@ -24,7 +24,7 @@ function LoginContent() {
     supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return
       if (data?.session?.user) {
-        // Sécurité Nexus : si déjà connecté, retour à l'accueil.
+        // Sécurité : si déjà connecté, retour à l'accueil.
         window.location.href = "/"
       }
     })

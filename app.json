@@ -1,6 +1,25 @@
 {
-  "name": "BKG Rewards",
-  "displayName": "BKG Rewards",
-  "icon": "./public/assets/images/v1/icon_v1.png"
+  "expo": {
+    "name": "BKG Rewards",
+    "slug": "bkg-rewards",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0f172a"
+      }
+    }
+  }
 }
-

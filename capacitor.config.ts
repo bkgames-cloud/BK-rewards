@@ -28,8 +28,8 @@ const config = {
   server: {
     androidScheme: "https",
     hostname: "bkg-rewards.com",
-    /** WebView : autoriser monlix.com et sous-domaines (offres partenaires). */
-    allowNavigation: ["monlix.com", "*.monlix.com"],
+    /** Navigation externe explicitement interdite (tunnel 100% interne). */
+    allowNavigation: [],
   },
 } satisfies CapacitorConfig & { bundledWebRuntime?: boolean }
 

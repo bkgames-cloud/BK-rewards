@@ -28,7 +28,7 @@ export interface Profile {
   /** Grade principal (Gratuit / VIP / VIP+). */
   grade?: string | null
   points: number
-  /** Solde synchronisé Nexus (miroir de `points`). */
+  /** Solde synchronisé (miroir de `points`). */
   points_balance?: number | null
   is_admin: boolean
   is_vip?: boolean

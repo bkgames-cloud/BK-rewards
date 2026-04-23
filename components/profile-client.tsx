@@ -17,6 +17,7 @@ import { emailMatchesAdmin } from "@/lib/admin-config"
 import { gradeToFlags, normalizeGrade } from "@/lib/grade"
 import { getApiUrl } from "@/lib/api-origin"
 import { PaymentService } from "@/lib/payment-service"
+import { fetchInternalTestVipBonusEnabled } from "@/lib/app-settings-flags"
 import { updateUserPoints } from "@/lib/update-user-points"
 import {
   AlertDialog,
@@ -66,15 +67,23 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const [showConfetti, setShowConfetti] = useState(false)
   const [myTickets, setMyTickets] = useState<Array<{ id: string; name: string; created_at: string }>>([])
   const [sessionLoading, setSessionLoading] = useState(true)
-  const [lastClaimAtLocal, setLastClaimAtLocal] = useState<string | null>(profile?.last_claim_date ?? null)
+  const [lastClaimAtLocal, setLastClaimAtLocal] = useState<string | null>(
+    profile?.last_bonus_claim ?? profile?.last_claim_date ?? null,
+  )
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false)
   const [isDeletingAccount, setIsDeletingAccount] = useState(false)
   const [deleteAccountMessage, setDeleteAccountMessage] = useState<string | null>(null)
+  const [internalTestVipBonus, setInternalTestVipBonus] = useState(false)
 
   const vipUntil = profile?.vip_until ? new Date(profile.vip_until) : null
-  const lastClaimDate = lastClaimAtLocal ? new Date(lastClaimAtLocal) : null
-  const claimedToday =
-    lastClaimDate && lastClaimDate.toDateString() === new Date().toDateString()
+  /** Aligné sur l’RPC `claim_vip_bonus` (fenêtre 24 h glissante, pas « minuit » calendaire). */
+  const lastClaimEffectiveIso = lastClaimAtLocal ?? profile?.last_bonus_claim ?? profile?.last_claim_date ?? null
+  const claimBlockedBy24hCooldown = (() => {
+    if (!lastClaimEffectiveIso) return false
+    const t = new Date(lastClaimEffectiveIso).getTime()
+    if (Number.isNaN(t)) return false
+    return Date.now() - t < 24 * 60 * 60 * 1000
+  })()
 
   useEffect(() => {
     setLocalPoints(profile?.points ?? 0)
@@ -82,9 +91,42 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
 
   const normalizedGrade = normalizeGrade(profile?.grade)
   const flagsFromGrade = gradeToFlags(normalizedGrade)
-  // Fallback compat (anciennes colonnes), mais on priorise grade.
-  const isVipPlus = flagsFromGrade.isVipPlus || Boolean(profile?.is_vip_plus)
+  // Fallback compat (colonnes booléennes) — désormais chargées par `useAuthContext`.
+  const isVipPlus =
+    flagsFromGrade.isVipPlus ||
+    Boolean(profile?.is_vip_plus) ||
+    (typeof profile?.vip_tier === "string" && profile.vip_tier.toLowerCase() === "vip_plus")
   const isVip = flagsFromGrade.isVip || Boolean(profile?.is_vip) || isVipPlus
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const fg = gradeToFlags(normalizeGrade(profile?.grade))
+    console.log("[bkg-profile-vip] statut détecté côté app", {
+      gradeRaw: profile?.grade,
+      normalizedGrade: normalizeGrade(profile?.grade),
+      is_vip: profile?.is_vip,
+      is_vip_plus: profile?.is_vip_plus,
+      vip_tier: profile?.vip_tier,
+      vip_until: profile?.vip_until,
+      flagsFromGrade: fg,
+      isVipComputed: isVip,
+      isVipPlusComputed: isVipPlus,
+      internalTestVipBonus,
+      lastClaimEffectiveIso,
+      claimBlockedBy24hCooldown,
+    })
+  }, [
+    profile?.grade,
+    profile?.is_vip,
+    profile?.is_vip_plus,
+    profile?.vip_tier,
+    profile?.vip_until,
+    isVip,
+    isVipPlus,
+    internalTestVipBonus,
+    lastClaimEffectiveIso,
+    claimBlockedBy24hCooldown,
+  ])
 
   // 1. Fetch initial pour l'ID de session (Sécurité anti-400)
   useEffect(() => {
@@ -101,10 +143,24 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     if (!PaymentService.isAndroidNative()) return
     let cancelled = false
     const run = async () => {
-      const labels = await PaymentService.getAndroidPriceLabels()
-      if (!cancelled) setAndroidPrices(labels)
+      try {
+        const labels = await PaymentService.getAndroidPriceLabels()
+        if (!cancelled) setAndroidPrices(labels)
+      } catch {
+        if (!cancelled) setAndroidPrices(null)
+      }
     }
     void run()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchInternalTestVipBonusEnabled().then((on) => {
+      if (!cancelled) setInternalTestVipBonus(on)
+    })
     return () => {
       cancelled = true
     }
@@ -222,10 +278,16 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     }
   }
 
-  // 3. Réclamer Bonus → /api/user/claim-daily
+  // 3. Réclamer Bonus — RPC `claim_vip_bonus()` (écrit sur `public.profiles` : points, last_bonus_claim, last_claim_date, etc. ; lit `purchases` pour l’abonnement actif). Aucune date n’est envoyée depuis le client : la DB utilise `NOW()` (timestamptz).
   const handleClaimDaily = async () => {
-    if (claimedToday) {
-      setClaimMessage("Déjà réclamé aujourd'hui.")
+    console.log("[bkg-profile-vip] clic Réclamer bonus", {
+      claimBlockedBy24hCooldown,
+      isVipPlus,
+      isVip,
+      userId: user?.id,
+    })
+    if (claimBlockedBy24hCooldown) {
+      setClaimMessage("Déjà réclamé : attendez la fin du délai de 24 h.")
       return
     }
     if (!user?.id) return
@@ -236,25 +298,59 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       const {
         data: { user: authUser },
       } = await supabase.auth.getUser()
-      if (!authUser?.id || authUser.id !== user.id) return
+      if (!authUser?.id || authUser.id !== user.id) {
+        console.warn("[bkg-profile-vip] session utilisateur incohérente pour claim")
+        return
+      }
 
       const { data, error } = await supabase.rpc("claim_vip_bonus")
+
       if (error) {
+        console.error("[bkg-profile-vip] RPC claim_vip_bonus — erreur PostgREST / Postgres", {
+          message: error.message,
+          code: error.code,
+          details: (error as { details?: string }).details,
+          hint: (error as { hint?: string }).hint,
+        })
         const msg = error.message || ""
         setClaimMessage(
           msg.includes("already_claimed_today")
-            ? "Déjà réclamé aujourd'hui."
+            ? "Déjà réclamé : délai de 24 h non écoulé."
             : msg.includes("subscription_inactive")
               ? "Abonnement inactif : bonus indisponible."
               : msg.includes("not_authenticated")
                 ? "Connexion requise."
-                : "Erreur bonus.",
+                : `Erreur technique : ${msg || error.code || "inconnue"}`,
         )
         return
       }
-      const row = Array.isArray(data) ? (data[0] as any) : null
+
+      type ClaimRpcRow = { success?: boolean; tickets_granted?: number; message?: string | null }
+      const row: ClaimRpcRow | null = Array.isArray(data)
+        ? (data[0] as ClaimRpcRow)
+        : data && typeof data === "object"
+          ? (data as ClaimRpcRow)
+          : null
+
+      console.log("[bkg-profile-vip] RPC claim_vip_bonus — corps (sans error)", {
+        rawData: data,
+        row,
+      })
+
       if (!row?.success) {
-        setClaimMessage(row?.message === "already_claimed_today" ? "Déjà réclamé aujourd'hui." : "Erreur bonus.")
+        const code = (row?.message || "").trim()
+        console.warn("[bkg-profile-vip] claim refusé côté SQL (success=false)", { code, row })
+        setClaimMessage(
+          code === "already_claimed_today"
+            ? "Déjà réclamé : délai de 24 h non écoulé."
+            : code === "subscription_inactive"
+              ? "Abonnement inactif : aucun achat actif dans « purchases » (voir script 051). Bonus indisponible."
+              : code === "not_authenticated"
+                ? "Connexion requise."
+                : code
+                  ? `Bonus impossible : ${code}`
+                  : "Erreur bonus (réponse vide de la fonction).",
+        )
         return
       }
 
@@ -266,12 +362,20 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       // Relecture des points (évite de recalculer côté client)
       const { data: refreshed } = await supabase
         .from("profiles")
-        .select("points, last_claim_date")
+        .select("points, last_claim_date, last_bonus_claim")
         .eq("id", user.id)
         .maybeSingle()
       if (refreshed?.points != null) setLocalPoints(Number(refreshed.points))
-    } catch {
-      setClaimMessage("Erreur serveur.")
+      const nextClaim =
+        (refreshed as { last_bonus_claim?: string | null; last_claim_date?: string | null } | null)
+          ?.last_bonus_claim ??
+        (refreshed as { last_claim_date?: string | null } | null)?.last_claim_date
+      if (nextClaim) setLastClaimAtLocal(nextClaim)
+    } catch (e) {
+      console.error("[bkg-profile-vip] handleClaimDaily exception", e)
+      setClaimMessage(
+        e instanceof Error ? `Erreur : ${e.message}` : "Erreur serveur.",
+      )
     } finally {
       setIsClaimingBonus(false)
     }
@@ -280,6 +384,10 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   // 4. Portail Stripe → /api/stripe/portal
   const handleManageSubscription = async () => {
     setSubscriptionMessage(null)
+    if (PaymentService.isAndroidNative()) {
+      setSubscriptionMessage("Gestion abonnement : disponible uniquement sur le Web (Stripe).")
+      return
+    }
     try {
       const res = await fetch(getApiUrl("/api/stripe/portal"), {
         method: "POST",
@@ -290,6 +398,10 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       const data = (await res.json()) as { url?: string; error?: string }
       if (!res.ok || !data?.url) {
         setSubscriptionMessage("Portail Stripe indisponible pour le moment.")
+        return
+      }
+      if (PaymentService.isAndroidNative()) {
+        setSubscriptionMessage("Gestion abonnement : disponible uniquement sur le Web (Stripe).")
         return
       }
       window.location.href = data.url
@@ -635,7 +747,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
       )}
 
       {/* ═══════════════════ BONUS QUOTIDIEN VIP ═══════════════════ */}
-      {(isVip || isVipPlus) && (
+      {(isVip || isVipPlus || internalTestVipBonus) && (
         <Card className={`border shadow-lg overflow-hidden ${
           isVipPlus
             ? "border-slate-400/30 bg-gradient-to-r from-slate-800/50 to-slate-700/30"
@@ -644,15 +756,19 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
           <CardContent className="pt-4 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-foreground">
-                {isVipPlus ? "⭐ Bonus VIP+ quotidien" : "👑 Bonus VIP quotidien"}
+                {internalTestVipBonus && !isVip && !isVipPlus
+                  ? "👑 Bonus VIP quotidien (phase test)"
+                  : isVipPlus
+                    ? "⭐ Bonus VIP+ quotidien"
+                    : "👑 Bonus VIP quotidien"}
               </p>
               <span className="text-xs text-foreground/50">{isVipPlus ? "+15 points/jour" : "+10 points/jour"}</span>
             </div>
             <Button
               onClick={handleClaimDaily}
-              disabled={!!claimedToday || isClaimingBonus}
+              disabled={claimBlockedBy24hCooldown || isClaimingBonus}
               className={`w-full font-semibold ${
-                claimedToday
+                claimBlockedBy24hCooldown
                   ? "bg-muted text-muted-foreground"
                   : isVipPlus
                     ? "bg-gradient-to-r from-slate-300 to-slate-400 text-slate-900 hover:from-slate-200 hover:to-slate-300"
@@ -661,8 +777,8 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
             >
               {isClaimingBonus
                 ? "Chargement..."
-                : claimedToday
-                  ? "✓ Bonus déjà réclamé aujourd'hui"
+                : claimBlockedBy24hCooldown
+                  ? "✓ Bonus déjà réclamé (24 h)"
                   : "Réclamer mon bonus quotidien"}
             </Button>
             {claimMessage && (

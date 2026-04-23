@@ -2,6 +2,7 @@
 
 import type { SVGProps } from "react"
 import { Instagram } from "lucide-react"
+import { Capacitor } from "@capacitor/core"
 import { openExternalUrl } from "@/lib/open-external-url"
 
 function TikTokIcon(props: SVGProps<SVGSVGElement>) {
@@ -16,6 +17,8 @@ const socialClass =
   "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 bg-background/30 text-muted-foreground transition-colors hover:text-foreground"
 
 export function FooterSocialLinks() {
+  const isNative = typeof window !== "undefined" && Capacitor.isNativePlatform()
+  if (isNative) return null
   return (
     <div className="flex items-center justify-center gap-4">
       <button

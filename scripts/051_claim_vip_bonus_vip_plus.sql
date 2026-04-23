@@ -55,7 +55,8 @@ BEGIN
     RETURN;
   END IF;
 
-  v_is_vip_plus := (v_active_product = 'vip_plus_mensuel');
+  -- VIP+ uniquement si product_id console: `vip_plus_mensuel_bkg`.
+  v_is_vip_plus := (v_active_product = 'vip_plus_mensuel_bkg');
   v_bonus := CASE WHEN v_is_vip_plus THEN 15 ELSE 10 END;
 
   UPDATE public.profiles

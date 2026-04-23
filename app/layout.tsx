@@ -1,7 +1,8 @@
 import type React from "react"
 import { Suspense } from "react"
 import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+/* next/font/google désactivé : évite les conflits Babel / export Capacitor avec babel.config.js à la racine. */
+// import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Toaster } from "@/components/ui/toaster"
 import { FloatingSoundToggle } from "@/components/floating-sound-toggle"
@@ -10,20 +11,39 @@ import { AndroidSubscriptionVerifier } from "@/components/android-subscription-v
 import { AppStateAudioHandler } from "@/components/app-state-audio"
 import { NativeBackButtonHandler } from "@/components/native-back-handler"
 import { NativeImmersiveInit } from "@/components/native-immersive-init"
-import { NativeWindowOpenShim } from "@/components/native-window-open-shim"
-import { OfferwallProvider } from "@/components/offerwall-provider"
+import { AndroidSmartAppBanner } from "@/components/android-smart-app-banner"
+import { AppErrorBoundary } from "@/components/app-error-boundary"
+import { CapacitorStartupGuard } from "@/components/capacitor-startup-guard"
 import "./globals.css"
 import { SITE_PUBLIC_URL } from "@/lib/site-url"
 
-const _geist = Geist({ subsets: ["latin"] })
-const _geistMono = Geist_Mono({ subsets: ["latin"] })
+/** Polices système (pas de téléchargement Google Fonts au build). */
+const SYSTEM_FONT_STACK =
+  'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+
+/** Évite un crash si `NEXT_PUBLIC_*` est absent ou invalide au build / runtime. */
+function safeMetadataBase(): URL {
+  const candidates = [
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    SITE_PUBLIC_URL,
+  ]
+  for (const raw of candidates) {
+    if (!raw || typeof raw !== "string") continue
+    const s = raw.trim()
+    try {
+      return new URL(s.startsWith("http") ? s : `https://${s.replace(/^\/\//, "")}`)
+    } catch {
+      continue
+    }
+  }
+  return new URL(SITE_PUBLIC_URL)
+}
 
 export const dynamic = "force-static"
 
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || SITE_PUBLIC_URL,
-  ),
+  metadataBase: safeMetadataBase(),
   title: "BKG Rewards - Gagnez des récompenses",
   description: "Rejoignez BKG Rewards et tentez de gagner des cadeaux gratuitement ! Regardez des publicités et gagnez des iPhone, consoles et cartes cadeaux.",
   generator: "v0.app",
@@ -93,23 +113,30 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
-      <body className="font-sans antialiased min-h-svh overflow-x-hidden">
-        <NativeBackButtonHandler />
-        <NativeImmersiveInit />
-        <NativeWindowOpenShim />
-        <AdMobInitializer />
-        <AndroidSubscriptionVerifier />
-        <AppStateAudioHandler />
-        <Suspense fallback={<div className="min-h-svh w-full" />}>
-          <OfferwallProvider>{children}</OfferwallProvider>
-        </Suspense>
-        <FloatingSoundToggle />
-        <Suspense fallback={null}>
-          <Toaster />
-        </Suspense>
-        <Suspense fallback={null}>
-          <Analytics />
-        </Suspense>
+      <body
+        className="antialiased min-h-svh overflow-x-hidden"
+        style={{ fontFamily: SYSTEM_FONT_STACK }}
+      >
+        <AppErrorBoundary>
+          <CapacitorStartupGuard>
+            <AndroidSmartAppBanner />
+            <NativeBackButtonHandler />
+            <NativeImmersiveInit />
+            <AdMobInitializer />
+            <AndroidSubscriptionVerifier />
+            <AppStateAudioHandler />
+            <Suspense fallback={<div className="min-h-svh w-full" />}>
+              {children}
+            </Suspense>
+            <FloatingSoundToggle />
+            <Suspense fallback={null}>
+              <Toaster />
+            </Suspense>
+            <Suspense fallback={null}>
+              <Analytics />
+            </Suspense>
+          </CapacitorStartupGuard>
+        </AppErrorBoundary>
       </body>
     </html>
   )

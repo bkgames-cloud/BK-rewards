@@ -13,7 +13,7 @@ import { getPrizeFallbackImage } from "@/lib/prizes"
 import type { RewardPool } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import { soundService } from "@/lib/sounds"
-import confetti from "canvas-confetti"
+import { getConfetti } from "@/lib/canvas-confetti-safe"
 import { addInAppNotification } from "@/lib/in-app-notifications"
 import { DB_NOTIFICATIONS_CHANGED_EVENT } from "@/lib/db-notifications"
 import { formatCooldownMmSs, remainingCooldownMs } from "@/lib/draw-cooldown"
@@ -304,7 +304,7 @@ export function RewardPoolsGrid({
     }
   }, [loadPoolsFromServer, enableRealtime, fetchUserPointsFresh])
 
-  // Realtime profils : si les points changent côté Supabase (admin / Nexus), refléter immédiatement.
+  // Realtime profils : si les points changent côté Supabase (admin), refléter immédiatement.
   useEffect(() => {
     if (!enableRealtime) return
     if (!ENABLE_SUPABASE_REALTIME) return
@@ -703,6 +703,7 @@ export function RewardPoolsGrid({
                           if (refreshed) {
                             setSelectedPool(refreshed)
                           }
+                          const confetti = await getConfetti()
                           confetti({
                             particleCount: 120,
                             spread: 75,

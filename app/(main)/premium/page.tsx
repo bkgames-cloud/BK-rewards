@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { createClient } from "@/lib/supabase/client"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Crown, Sparkles, Shield, X, Check, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
@@ -15,6 +15,7 @@ import { soundService } from "@/lib/sounds"
 import { Confetti } from "@/components/confetti"
 import { PaymentService } from "@/lib/payment-service"
 import { getApiUrl } from "@/lib/api-origin"
+import { fetchInternalTestVipBonusEnabled } from "@/lib/app-settings-flags"
 
 export default function PremiumPage() {
   const [isVip, setIsVip] = useState(false)
@@ -26,8 +27,11 @@ export default function PremiumPage() {
   const [lastClaim, setLastClaim] = useState<Date | null>(null)
   const [canClaim, setCanClaim] = useState(false)
   const [showConfetti, setShowConfetti] = useState(false)
+  const [internalTestVipBonus, setInternalTestVipBonus] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
+  const debugVip = (searchParams?.get("debugVip") || "").trim() === "1"
 
   useEffect(() => {
     async function checkVipStatus() {
@@ -116,6 +120,7 @@ export default function PremiumPage() {
     }
 
     checkVipStatus()
+    void fetchInternalTestVipBonusEnabled().then(setInternalTestVipBonus)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Tableau de dépendances vide stable - ne se relance qu'une seule fois au montage
 
@@ -167,6 +172,10 @@ export default function PremiumPage() {
       }
     } catch (error) {
       console.error("Unexpected error:", error)
+      console.log("[premium] subscribe failed — debug", {
+        type,
+        message: error instanceof Error ? error.message : String(error),
+      })
       const msg =
         error instanceof Error ? error.message : "Une erreur est survenue lors de l'abonnement."
       toast({
@@ -175,6 +184,56 @@ export default function PremiumPage() {
         variant: "destructive",
       })
     }
+  }
+
+  /**
+   * Secours debug — simule un achat réussi sans passer par Google Play.
+   * Objectif: débloquer rapidement l'UI VIP+ pour tests.
+   *
+   * NOTE: Ceci met à jour `profiles` directement (soumis aux politiques RLS).
+   * En prod, la source de vérité reste `purchases` + vérification serveur.
+   */
+  const handlePurchaseSuccess = async () => {
+    const supabase = createClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    console.log("[premium][debugVip] handlePurchaseSuccess start", { userId: user?.id, userError })
+    if (!user?.id) {
+      toast({ title: "Erreur", description: "Connexion requise.", variant: "destructive" })
+      return
+    }
+
+    const vipUntilIso = new Date(Date.now() + 1000 * 60 * 60 * 24 * 90).toISOString() // +90 jours
+    const payload = {
+      is_vip: true,
+      is_vip_plus: true,
+      vip_tier: "vip_plus",
+      grade: "VIP+",
+      vip_until: vipUntilIso,
+      updated_at: new Date().toISOString(),
+    } as const
+
+    const { error } = await supabase.from("profiles").update(payload).eq("id", user.id)
+    if (error) {
+      console.error("[premium][debugVip] profiles.update failed", {
+        message: error.message,
+        code: error.code,
+        details: (error as { details?: string }).details,
+        hint: (error as { hint?: string }).hint,
+      })
+      toast({
+        title: "Erreur",
+        description: `Impossible d'activer VIP+ (RLS?): ${error.message}`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    console.log("[premium][debugVip] VIP+ activé (profil mis à jour)", { vipUntilIso })
+    toast({ title: "OK", description: "VIP+ activé (mode debug). Redémarre la page si besoin." })
+    setIsVip(true)
+    setVipUntil(vipUntilIso)
+    setCanClaim(true)
+    router.refresh()
   }
 
   const handleCancelSubscription = async () => {
@@ -246,6 +305,14 @@ export default function PremiumPage() {
   }
 
   const handleOpenPortal = async () => {
+    if (PaymentService.isAndroidNative()) {
+      toast({
+        title: "Indisponible",
+        description: "Gestion abonnement : disponible uniquement sur le Web (Stripe).",
+        variant: "destructive",
+      })
+      return
+    }
     try {
       const res = await fetch(getApiUrl("/api/stripe/portal"), {
         method: "POST",
@@ -262,6 +329,14 @@ export default function PremiumPage() {
         })
         return
       }
+      if (PaymentService.isAndroidNative()) {
+        toast({
+          title: "Indisponible",
+          description: "Gestion abonnement : disponible uniquement sur le Web (Stripe).",
+          variant: "destructive",
+        })
+        return
+      }
       window.location.href = data.url
     } catch (e) {
       console.error("[premium] stripe portal:", e)
@@ -274,7 +349,7 @@ export default function PremiumPage() {
   }
 
   const handleClaimBonus = async () => {
-    if (!isVip) {
+    if (!isVip && !internalTestVipBonus) {
       // Rediriger vers l'abonnement (scroll vers les abonnements)
       window.scrollTo({ top: document.querySelector('.grid.gap-4.md\\:grid-cols-2')?.getBoundingClientRect().top || 0, behavior: 'smooth' })
       return
@@ -285,16 +360,24 @@ export default function PremiumPage() {
 
     try {
       const { data, error } = await supabase.rpc("claim_vip_bonus")
+      console.log("[premium] claim_vip_bonus", { error: error ?? null, data })
 
       if (error) {
-        console.error("Error claiming bonus:", error)
+        console.error("[premium] claim_vip_bonus PostgREST/Postgres", {
+          message: error.message,
+          code: error.code,
+          details: (error as { details?: string }).details,
+          hint: (error as { hint?: string }).hint,
+        })
         toast({
           title: "Erreur",
           description: error.message?.includes("already_claimed_today")
             ? "Vous avez déjà réclamé votre bonus aujourd'hui. Revenez demain !"
-            : error.message?.includes("not_vip")
-              ? "Vous devez être VIP pour réclamer ce bonus."
-              : "Erreur lors de la réclamation du bonus.",
+            : error.message?.includes("subscription_inactive")
+              ? "Aucun abonnement actif en base (table purchases)."
+              : error.message?.includes("not_vip")
+                ? "Vous devez être VIP pour réclamer ce bonus."
+                : error.message || "Erreur lors de la réclamation du bonus.",
           variant: "destructive",
         })
         setClaiming(false)
@@ -336,12 +419,16 @@ export default function PremiumPage() {
         // Recharger la page pour mettre à jour les points
         router.refresh()
       } else {
-        const message = data?.[0]?.message || "Erreur inconnue"
+        const message = (data?.[0] as { message?: string } | undefined)?.message || "Erreur inconnue"
+        console.warn("[premium] claim_vip_bonus success=false", { message, row: data?.[0] })
         toast({
           title: "Erreur",
-          description: message === "already_claimed_today"
-            ? "Vous avez déjà réclamé votre bonus aujourd'hui."
-            : "Impossible de réclamer le bonus pour le moment.",
+          description:
+            message === "already_claimed_today"
+              ? "Vous avez déjà réclamé votre bonus aujourd'hui."
+              : message === "subscription_inactive"
+                ? "Aucun achat actif (purchases) : le bonus nécessite un abonnement reconnu en base."
+                : message,
           variant: "destructive",
         })
       }
@@ -402,14 +489,16 @@ export default function PremiumPage() {
       )}
 
       {/* Statut VIP actuel */}
-      {isAuthenticated && isVip && (
+      {isAuthenticated && (isVip || internalTestVipBonus) && (
         <Card className="border-2 border-yellow-500/50 bg-gradient-to-br from-yellow-500/10 to-yellow-600/5">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-foreground flex items-center gap-2">
                   <Crown className="h-5 w-5 text-yellow-500" />
-                  Vous êtes VIP !
+                  {internalTestVipBonus && !isVip
+                    ? "Bonus quotidien — phase test interne"
+                    : "Vous êtes VIP !"}
                 </CardTitle>
                 <CardDescription className="text-muted-foreground mt-1">
                   Profitez de tous les avantages premium
@@ -490,7 +579,7 @@ export default function PremiumPage() {
         </Card>
       )}
 
-      {/* Abonnements - Cachés si VIP ou non connecté */}
+      {/* Abonnements - Cachés si VIP ou non connecté (reste visible en phase test si pas encore VIP) */}
       {isAuthenticated && !isVip && (
         <div className="grid gap-4 md:grid-cols-2">
         {/* Abonnement Hebdomadaire */}
@@ -607,6 +696,23 @@ export default function PremiumPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Secours debug caché (activer via /premium?debugVip=1) */}
+      {debugVip && PaymentService.isAndroidNative() ? (
+        <div className="mt-2 rounded-lg border border-border/40 bg-[#111111]/70 p-3 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between gap-2">
+            <span>Mode debugVip actif.</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handlePurchaseSuccess()}
+            >
+              Simuler achat VIP+
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

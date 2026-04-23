@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 /**
  * Met à jour le solde utilisateur sur `public.profiles`.
  *
- * Objectif Nexus : garder `points` et `points_balance` synchronisés.
+ * Objectif : garder `points` et `points_balance` synchronisés.
  * Compat : si `points_balance` n'existe pas encore, on retombe sur `points` seul.
  */
 export async function updateUserPoints(

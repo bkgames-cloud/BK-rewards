@@ -7,17 +7,11 @@ import { Capacitor } from "@capacitor/core"
  */
 export async function openInAppBrowser(url: string): Promise<void> {
   if (typeof window === "undefined") return
+  if (Capacitor.isNativePlatform()) {
+    throw new Error("Navigation externe désactivée dans l’app mobile.")
+  }
   if (!/^https?:\/\//i.test(url)) {
     window.open(url, "_blank", "noopener,noreferrer")
-    return
-  }
-  if (Capacitor.isNativePlatform()) {
-    const { Browser } = await import("@capacitor/browser")
-    await Browser.open({
-      url,
-      presentationStyle: "popover",
-      toolbarColor: "#111111",
-    })
     return
   }
   window.open(url, "_blank", "noopener,noreferrer")

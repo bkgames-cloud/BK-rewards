@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Info, Lock } from "lucide-react"
 import { motion } from "framer-motion"
-import confetti from "canvas-confetti"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -22,8 +21,12 @@ import { Confetti } from "@/components/confetti"
 import { soundService } from "@/lib/sounds"
 import { Capacitor } from "@capacitor/core"
 import { showRewardVideo } from "@/lib/admob-rewarded"
+import { countVideoViewsLastHour, isHourlyVideoQuotaExceeded } from "@/lib/video-quota"
 import { updateUserPoints } from "@/lib/update-user-points"
 import { ENABLE_SUPABASE_REALTIME } from "@/lib/supabase/client"
+
+/** Pubs récompensées requises pour débloquer BKG Scratch (1 seule). */
+const SCRATCH_REWARDED_ADS_REQUIRED = 1
 
 export function ConcoursClient() {
   type LeaderboardEntry = {
@@ -73,6 +76,8 @@ export function ConcoursClient() {
   const [userId, setUserId] = useState<string | null>(null)
   const [isOverlayOpen, setIsOverlayOpen] = useState(false)
   const [videoAction, setVideoAction] = useState<"scratch" | "wheel-rescue" | null>(null)
+  /** Toujours à jour avant AdMob / overlay : `handleVideoComplete` serait sinon capturé avec un `videoAction` obsolète (→ 2e vidéo nécessaire). */
+  const videoActionRef = useRef<"scratch" | "wheel-rescue" | null>(null)
   const [adGateStatus, setAdGateStatus] = useState<string | null>(null)
   const [adGateCanRetry, setAdGateCanRetry] = useState(false)
   const [userPoints, setUserPoints] = useState(0)
@@ -114,8 +119,9 @@ export function ConcoursClient() {
   const [tapLeaderboard, setTapLeaderboard] = useState<LeaderboardEntry[]>([])
   /** Anti double déblocage Scratch après une seule pub AdMob. */
   const scratchPostAdHandledRef = useRef(false)
-  /** Déblocage après 1 pub récompensée uniquement (`>= 1`, jamais 2). */
   const scratchAdsWatchedRef = useRef(0)
+  /** État « pub visionnée » pour BKG Scratch — réinitialisé à chaque nouvelle partie / fermeture. */
+  const [isAdWatched, setIsAdWatched] = useState(false)
   const tapLastClickRef = useRef<number>(0)
   const tapIntervalRef = useRef<number | null>(null)
   const tapArenaCountRef = useRef<number>(0)
@@ -398,20 +404,22 @@ export function ConcoursClient() {
   const tapTapClosedMessage = "Session terminee. Resultats et nouvelle session dimanche a minuit."
 
   const handleVideoComplete = async () => {
-    if (videoAction === "scratch") {
+    const gateAction = videoActionRef.current
+    if (gateAction === "scratch") {
       if (scratchPostAdHandledRef.current) return
       // Web : pas d’AdMob — une vidéo simulée = 1 pub (équivalent adsWatched >= 1).
       if (!Capacitor.isNativePlatform()) {
-        scratchAdsWatchedRef.current = 1
+        scratchAdsWatchedRef.current = SCRATCH_REWARDED_ADS_REQUIRED
       }
-      if (scratchAdsWatchedRef.current < 1) return
+      if (scratchAdsWatchedRef.current < SCRATCH_REWARDED_ADS_REQUIRED) return
       scratchPostAdHandledRef.current = true
+      setIsAdWatched(true)
       setScratchUnlocked(true)
       setShowScratchModal(true)
       return
     }
 
-    if (videoAction === "wheel-rescue" && pendingRescueBet && userId) {
+    if (gateAction === "wheel-rescue" && pendingRescueBet && userId) {
       try {
         const ok = await postUpdatePoints({ pointsToAdd: pendingRescueBet })
         if (ok) {
@@ -442,7 +450,9 @@ export function ConcoursClient() {
     if (!scratchAvailable) return
     scratchPostAdHandledRef.current = false
     scratchAdsWatchedRef.current = 0
+    setIsAdWatched(false)
     if (!Capacitor.isNativePlatform()) {
+      videoActionRef.current = "scratch"
       setVideoAction("scratch")
       setIsOverlayOpen(true)
       return
@@ -475,6 +485,7 @@ export function ConcoursClient() {
   const resetScratch = () => {
     scratchPostAdHandledRef.current = false
     scratchAdsWatchedRef.current = 0
+    setIsAdWatched(false)
     setScratchUnlocked(false)
     setScratchResult(null)
     setShowScratchModal(false)
@@ -519,10 +530,27 @@ export function ConcoursClient() {
   }
 
   const runRewardedGate = async (action: "scratch" | "wheel-rescue") => {
+    if (!userId) {
+      toast({ title: "Connexion requise", variant: "destructive" })
+      return
+    }
+    const supabase = createClient()
+    const hourCount = await countVideoViewsLastHour(supabase, userId)
+    console.log(`Utilisateur ID: ${userId} - Tentative de visionnage ${hourCount + 1}/5`)
+    if (isHourlyVideoQuotaExceeded(hourCount)) {
+      toast({
+        title: "Limite atteinte",
+        description: "Limite atteinte, reviens plus tard",
+        variant: "destructive",
+      })
+      return
+    }
+
     if (action === "scratch") {
       scratchPostAdHandledRef.current = false
       scratchAdsWatchedRef.current = 0
     }
+    videoActionRef.current = action
     setVideoAction(action)
     setAdGateStatus("Préparation de la vidéo...")
     setAdGateCanRetry(false)
@@ -530,7 +558,7 @@ export function ConcoursClient() {
       const result = await showRewardVideo({
         onRewardGranted: async () => {
           if (action === "scratch") {
-            scratchAdsWatchedRef.current += 1
+            scratchAdsWatchedRef.current = SCRATCH_REWARDED_ADS_REQUIRED
           }
           await handleVideoComplete()
         },
@@ -934,7 +962,10 @@ export function ConcoursClient() {
       ) : null}
 
       {showScratchModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          data-scratch-ad-watched={isAdWatched ? "1" : "0"}
+        >
           <Card className="w-full max-w-sm p-6 text-center space-y-4 bg-[#111111] border-border/60">
             <div className="text-2xl font-bold p-6 bg-secondary/30 rounded-xl border-dashed border-2">
               {scratchResult === null ? "BKG" : (scratchResult === 0 ? "Perdu" : `+${scratchResult} pts`)}

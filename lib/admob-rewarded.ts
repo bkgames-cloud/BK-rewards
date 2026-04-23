@@ -8,6 +8,7 @@
  */
 
 import type { PluginListenerHandle } from "@capacitor/core"
+import { ensureUmpConsentBeforeAndroidAds } from "@/lib/ump-consent-android"
 
 /**
  * `true` = tests (IDs démo + SDK test). `false` = constantes PROD ci‑dessous + pas de mode test SDK.
@@ -54,6 +55,7 @@ export async function initializeAdMob(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return
   if (Capacitor.getPlatform() !== "android") return
   if (initDone) return
+  await ensureUmpConsentBeforeAndroidAds()
   const { AdMob } = await import("@capacitor-community/admob")
   console.log("[admob] initialize: calling AdMob.initialize", {
     testing: ADMOB_USE_TEST_IDS,
@@ -103,21 +105,18 @@ export async function showRewardVideo(options: {
   }
 
   const handles: PluginListenerHandle[] = []
-  let pointsCredited = false
-  /** Verrou synchrone anti double déclenchement (Rewarded + rewardItem, ou événements du SDK). */
-  let grantLock = false
+  /** Une seule exécution du callback récompense (anti double événement SDK / double crédit). */
+  let rewardCallbackDone = false
   /** Message d’erreur du callback (string pour éviter les soucis d’inférence TS sur les closures async). */
   let grantErrorMessage: string | null = null
 
   const grantOnce = async () => {
-    if (grantLock || pointsCredited) return
-    grantLock = true
-    pointsCredited = true
+    if (rewardCallbackDone) return
+    rewardCallbackDone = true
     try {
       await options.onRewardGranted()
     } catch (e: unknown) {
-      pointsCredited = false
-      grantLock = false
+      rewardCallbackDone = false
       grantErrorMessage =
         e instanceof Error ? e.message : typeof e === "string" ? e : String(e)
     }
@@ -158,7 +157,7 @@ export async function showRewardVideo(options: {
     const rewardItem = await AdMob.showRewardVideoAd()
     console.log("[admob] rewarded: showRewardVideoAd() resolved", { rewardItem })
     /** Une seule récompense validée suffit (évite d’exiger 2 événements / un `amount` numérique). */
-    if (!pointsCredited && rewardItem != null) {
+    if (!rewardCallbackDone && rewardItem != null) {
       await grantOnce()
     }
 
@@ -170,7 +169,7 @@ export async function showRewardVideo(options: {
       }
     }
 
-    if (!pointsCredited) {
+    if (!rewardCallbackDone) {
       await cleanup()
       return { ok: false, message: "Récompense non validée (vidéo non terminée)." }
     }

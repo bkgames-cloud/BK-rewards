@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/client"
 import type { Profile, Season } from "@/lib/types"
-import { Trophy, Sparkles, Crown, Copy, Play, Target, ExternalLink } from "lucide-react"
+import { Trophy, Sparkles, Crown, Copy, Play, Target } from "lucide-react"
 import { soundService } from "@/lib/sounds"
 import { AnimatedCounter } from "@/components/animated-counter"
 import { Confetti } from "@/components/confetti"
@@ -18,10 +18,7 @@ import { showRewardVideo } from "@/lib/admob-rewarded"
 import { cn } from "@/lib/utils"
 import { getAndroidApkDownloadUrl } from "@/lib/android-app-promo"
 import { openExternalUrl } from "@/lib/open-external-url"
-import { openInAppBrowser } from "@/lib/in-app-browser"
-import { getMonlixDirectUrl } from "@/lib/monlix-urls"
 import { updateUserPoints } from "@/lib/update-user-points"
-import { useOfferwall } from "@/components/offerwall-provider"
 import {
   Dialog,
   DialogContent,
@@ -30,8 +27,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { useToast } from "@/hooks/use-toast"
+import { countVideoViewsLastHour, isHourlyVideoQuotaExceeded } from "@/lib/video-quota"
+import { OFFERS_ENABLED } from "@/lib/offerwall-ui"
 
-/** URL offerwall (Monlix, Ayet, etc.) — chargée dynamiquement via `OfferwallProvider`. */
+/** Offres : écran interne côté app, route interne côté web. */
 
 interface DashboardClientProps {
   isAuthenticated: boolean
@@ -54,7 +54,7 @@ export function DashboardClient({
   showRewardsPools = false,
   minimalHome = false,
 }: DashboardClientProps) {
-  const { offerwall, loading: offerwallLoading } = useOfferwall()
+  const { toast } = useToast()
   const [points, setPoints] = useState(profile?.points ?? 0)
   const [isVip, setIsVip] = useState(false)
   const [isVipPlus, setIsVipPlus] = useState(false)
@@ -470,6 +470,7 @@ export function DashboardClient({
     }
 
     const { data, error } = await supabase.rpc("add_reward_points").single()
+    console.log(`Statut de la transaction Supabase : ${error ? "Erreur" : "Succès"}`)
     if (error) {
       if (process.env.NODE_ENV !== "production") {
         console.error("[DashboardClient] reward_ad_view error:", error)
@@ -556,6 +557,20 @@ export function DashboardClient({
       return
     }
 
+    const supabaseQuota = createClient()
+    const hourCount = await countVideoViewsLastHour(supabaseQuota, userId)
+    console.log(`Utilisateur ID: ${userId} - Tentative de visionnage ${hourCount + 1}/5`)
+    if (isHourlyVideoQuotaExceeded(hourCount)) {
+      toast({
+        title: "Limite atteinte",
+        description: "Limite atteinte, reviens plus tard",
+        variant: "destructive",
+      })
+      setStatusMessage("Limite atteinte, reviens plus tard")
+      setStatusType("error")
+      return
+    }
+
     setIsShowingRewardedAd(true)
     setIsRewarding(true)
     setStatusMessage("Chargement de la vidéo récompensée...")
@@ -591,17 +606,17 @@ export function DashboardClient({
       setIsShowingRewardedAd(false)
       setIsRewarding(false)
     }
-  }, [userId, router, isAuthenticated, rewardUserForVideo])
+  }, [userId, router, isAuthenticated, rewardUserForVideo, toast])
 
-  /** Web/App : ouvre l’offerwall configurée (Monlix, Ayet, etc.). */
-  const handleMissionAction = useCallback(async () => {
+  /** Offre : tunnel interne (pas de navigation externe en natif). */
+  const handleOpenOffers = useCallback(async () => {
     if (!userId) return
     if (!isAuthenticated) {
       router.push("/auth/login/")
       return
     }
-    if (!offerwall?.url?.trim()) {
-      setStatusMessage("Offres en cours de mise à jour.")
+    if (!OFFERS_ENABLED) {
+      setStatusMessage("Offres momentanément indisponibles.")
       setStatusType("error")
       return
     }
@@ -609,15 +624,19 @@ export function DashboardClient({
     setStatusMessage(null)
     setStatusType(null)
     try {
-      const url = offerwall?.url?.trim() || getMonlixDirectUrl()
-      await openInAppBrowser(url)
-    } catch (e) {
-      setStatusMessage(e instanceof Error ? e.message : "Impossible d’ouvrir l’offerwall.")
-      setStatusType("error")
+      // Sur le bundle web (Capacitor), on ne doit pas ouvrir de site externe.
+      // L'écran natif WebView (Expo) gère Lootably/Revlum côté app.
+      if (Capacitor.isNativePlatform()) {
+        setStatusMessage("Les offres sont disponibles dans l’app mobile (écran interne).")
+        setStatusType("error")
+        return
+      }
+      // Web: conserver un parcours interne (pas de redirection externe).
+      router.push("/offers")
     } finally {
       setIsMissionRewarding(false)
     }
-  }, [userId, router, isAuthenticated, offerwall?.url])
+  }, [userId, router, isAuthenticated])
 
   const handleCopyReferral = async () => {
     if (!referralCode) return
@@ -638,13 +657,9 @@ export function DashboardClient({
   const androidApkUrl = getAndroidApkDownloadUrl()
   const androidAppLandingUrl =
     androidApkUrl.trim() !== "" ? androidApkUrl : "https://www.bkg-rewards.com"
-  const offerwallEnabled = Boolean(offerwall?.url && offerwall?.url.trim() !== "")
-  const offerwallUiDisabled = offerwallLoading || !offerwallEnabled
-  const offerwallUrl = offerwall?.url?.trim() || getMonlixDirectUrl()
-  const offerwallName = offerwall?.name?.trim() || "Offerwall"
-  const webExclusiveOffersUrl = "https://www.bkg-rewards.com"
+  const offersUiDisabled = !OFFERS_ENABLED
   const isNativeApp = Capacitor.isNativePlatform()
-  const monlixCardOrder = !isNativeApp ? "order-1 sm:order-1" : "order-2 sm:order-2"
+  const offersCardOrder = !isNativeApp ? "order-1 sm:order-1" : "order-2 sm:order-2"
   const videoCardOrder = !isNativeApp ? "order-2 sm:order-2" : "order-1 sm:order-1"
 
   return (
@@ -733,28 +748,30 @@ export function DashboardClient({
       )}
 
       {showWallet && isAuthenticated && (
-        <Button
-          type="button"
-          className="relative w-full overflow-hidden bg-gradient-to-r from-[#D4AF37] via-amber-400 to-yellow-200 py-6 text-base font-extrabold text-black shadow-lg hover:from-amber-300 hover:to-yellow-100 disabled:opacity-60"
-          onClick={() => {
-            if (offerwallUiDisabled) {
-              setStatusMessage("Offres en cours de mise à jour.")
-              setStatusType("error")
-              return
-            }
-            void openInAppBrowser(offerwallUrl)
-          }}
-          disabled={offerwallUiDisabled}
-        >
-          {offerwallUiDisabled ? (
-            <>
-              <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent opacity-80 animate-shimmer" />
-              <span className="relative">⏳ Offres en cours de mise à jour</span>
-            </>
-          ) : (
-            "🔥 Actions (Offres Spéciales)"
-          )}
-        </Button>
+        <div className="relative w-full">
+          <Button
+            type="button"
+            className="relative w-full overflow-hidden bg-gradient-to-r from-[#D4AF37] via-amber-400 to-yellow-200 py-6 text-base font-extrabold text-black shadow-lg hover:from-amber-300 hover:to-yellow-100 disabled:opacity-60"
+            onClick={() => {
+              if (offersUiDisabled) {
+                setStatusMessage("Offres momentanément indisponibles.")
+                setStatusType("error")
+                return
+              }
+              void handleOpenOffers()
+            }}
+            disabled={offersUiDisabled}
+          >
+            {offersUiDisabled ? (
+              <>
+                <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent opacity-80 animate-shimmer" />
+                <span className="relative">⏳ Offres en cours de mise à jour</span>
+              </>
+            ) : (
+              "🔥 Actions (Offres Spéciales)"
+            )}
+          </Button>
+        </div>
       )}
 
       {showWallet && isAuthenticated && (
@@ -836,9 +853,9 @@ export function DashboardClient({
 
           <Card
             className={cn(
-              "border border-violet-500/35 bg-gradient-to-br from-violet-950/60 via-card to-card shadow-lg",
+              "relative border border-violet-500/35 bg-gradient-to-br from-violet-950/60 via-card to-card shadow-lg",
               !showVideoPointsCard && "sm:col-span-1 sm:max-w-lg sm:mx-auto w-full",
-              monlixCardOrder,
+              offersCardOrder,
             )}
           >
             <CardContent className="flex flex-col gap-3 p-4">
@@ -851,70 +868,35 @@ export function DashboardClient({
                     <h3 className="font-semibold leading-tight text-foreground">Actions (Revenus élevés)</h3>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {isNativeApp
-                        ? "Ouverture dans une fenêtre intégrée — ferme pour revenir dans BKG Rewards."
-                        : "Accès direct aux offres (offerwall configurée)."}
+                        ? "Offres disponibles dans l’écran interne de l’app."
+                        : "Accès direct aux offres (écran interne)."}
                     </p>
                   </div>
                 </div>
                 <span className="shrink-0 rounded-full bg-violet-500/25 px-2.5 py-1 text-xs font-bold text-violet-100">
-                  {offerwallName}
+                  Offres
                 </span>
               </div>
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => void handleMissionAction()}
-                disabled={isMissionRewarding || offerwallUiDisabled}
+                onClick={() => void handleOpenOffers()}
+                disabled={isMissionRewarding || offersUiDisabled}
                 className="w-full border border-violet-500/40 bg-violet-500/15 text-foreground hover:bg-violet-500/25 disabled:opacity-60"
-                aria-label="Ouvrir l’offerwall"
+                aria-label="Ouvrir les offres"
               >
-                {offerwallUiDisabled
+                {offersUiDisabled
                   ? "⏳ Offres en cours de mise à jour"
                   : isMissionRewarding
                     ? "Ouverture…"
-                    : isNativeApp
-                      ? `Ouvrir ${offerwallName}`
-                      : `${offerwallName} — offres`}
+                    : "Ouvrir les offres"}
               </Button>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Offres : Monlix + site (openInAppBrowser → @capacitor/browser sur natif). */}
-      {showWallet && isAuthenticated && (
-        <div className="flex w-full max-w-lg flex-col gap-2.5 sm:mx-auto">
-          <Button
-            type="button"
-            className="w-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 text-white shadow-md hover:from-emerald-500/95 hover:to-teal-500/95 disabled:opacity-60"
-            onClick={() => {
-              if (offerwallUiDisabled) {
-                setStatusMessage("Offres en cours de mise à jour.")
-                setStatusType("error")
-                return
-              }
-              void openInAppBrowser(offerwallUrl)
-            }}
-            disabled={offerwallUiDisabled}
-          >
-            {offerwallUiDisabled ? "Offres en cours de mise à jour" : offerwallName}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full border border-border/60 bg-secondary/85 text-foreground shadow-sm transition-colors hover:bg-secondary"
-            onClick={() => void openInAppBrowser(webExclusiveOffersUrl)}
-          >
-            <ExternalLink className="mr-2 h-4 w-4 shrink-0 opacity-80" aria-hidden />
-            Accéder aux offres Web exclusives
-          </Button>
-          <p className="text-center text-[11px] text-muted-foreground">
-            {Capacitor.isNativePlatform()
-              ? "Fenêtre intégrée (Capacitor Browser) — retour à l’app en fermant."
-              : "Ouverture dans un nouvel onglet."}
-          </p>
-        </div>
-      )}
+      {/* Suppression des redirections vers des offres web externes depuis l'app */}
 
       {showWallet && isAuthenticated && statusMessage ? (
         <p
@@ -1051,7 +1033,9 @@ export function DashboardClient({
                       addInAppNotification("Configurez NEXT_PUBLIC_ANDROID_APK_URL (lien APK ou page de téléchargement).")
                       return
                     }
-                    void openExternalUrl(androidApkUrl)
+                    if (!Capacitor.isNativePlatform()) {
+                      void openExternalUrl(androidApkUrl)
+                    }
                   }}
                 >
                   Télécharger l&apos;APK
@@ -1088,7 +1072,9 @@ export function DashboardClient({
                     type="button"
                     size="sm"
                     variant="secondary"
-                    onClick={() => void openExternalUrl(androidApkUrl)}
+                    onClick={() => {
+                      if (!Capacitor.isNativePlatform()) void openExternalUrl(androidApkUrl)
+                    }}
                   >
                     Télécharger l&apos;APK
                   </Button>

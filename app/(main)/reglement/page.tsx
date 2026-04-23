@@ -71,7 +71,7 @@ export default function ReglementPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
           <p>Apple et Google ne sont pas impliqués dans l&apos;organisation des tirages.</p>
-          <p>Les points n&apos;ont aucune valeur monétaire et ne sont pas convertibles en argent.</p>
+          <p>Les points sont des unités de fidélité sans valeur monétaire et ne sont pas convertibles en argent.</p>
         </CardContent>
       </Card>
     </div>
