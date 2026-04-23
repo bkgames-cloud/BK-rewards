@@ -13,6 +13,10 @@ const capacitorAssetOrigin = (
 ).replace(/\/$/, "")
 
 const nextConfig = {
+  // Force la régénération du manifest
+  generateBuildId: async () => {
+    return `build-${Date.now()}`
+  },
   // Vérification "obfuscation légère": en prod, Next minifie via SWC (noms raccourcis a,b,c…).
   // On l'active explicitement pour éviter toute divergence.
   swcMinify: true,
