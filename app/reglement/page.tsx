@@ -41,7 +41,10 @@ export default function ReglementPage() {
         </CardHeader>
         <CardContent className="space-y-3 text-sm text-muted-foreground">
           <p>Tirage aléatoire via algorithme dès que le quota de participation est atteint.</p>
-          <p>Le compteur est réinitialisé après chaque tirage ; les tickets au-delà du seuil participent au tirage en cours.</p>
+          <p>
+            Le compteur est réinitialisé après chaque tirage ; les tickets au-delà du seuil participent au tirage en
+            cours.
+          </p>
           <p>Les gagnants sont notifiés par e-mail.</p>
           <p>Réponse du gagnant sous 7 jours maximum, sinon le lot est remis en jeu.</p>
         </CardContent>
@@ -56,8 +59,8 @@ export default function ReglementPage() {
         <CardContent className="space-y-3 text-sm text-muted-foreground">
           <p>
             Les avantages VIP/VIP+ incluent des probabilités de gains améliorées sur les{" "}
-            <span className="font-medium text-foreground">MINI-JEUX</span> et la suppression des timers.
-            Cependant, ils n&apos;augmentent pas les chances statistiques lors des{" "}
+            <span className="font-medium text-foreground">MINI-JEUX</span> et la suppression des timers. Cependant, ils
+            n&apos;augmentent pas les chances statistiques lors des{" "}
             <span className="font-medium text-foreground">TIRAGES AU SORT</span> de cadeaux.
           </p>
         </CardContent>
@@ -77,3 +80,4 @@ export default function ReglementPage() {
     </div>
   )
 }
+

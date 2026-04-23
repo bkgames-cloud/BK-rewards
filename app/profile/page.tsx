@@ -15,3 +15,4 @@ export default function ProfilePage() {
 
   return <ProfileClient user={user} profile={profile} />
 }
+

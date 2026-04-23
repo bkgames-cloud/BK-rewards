@@ -14,6 +14,7 @@ import { NativeImmersiveInit } from "@/components/native-immersive-init"
 import { AndroidSmartAppBanner } from "@/components/android-smart-app-banner"
 import { AppErrorBoundary } from "@/components/app-error-boundary"
 import { CapacitorStartupGuard } from "@/components/capacitor-startup-guard"
+import { AppShell } from "@/components/app-shell"
 import "./globals.css"
 import { SITE_PUBLIC_URL } from "@/lib/site-url"
 
@@ -126,7 +127,7 @@ export default function RootLayout({
             <AndroidSubscriptionVerifier />
             <AppStateAudioHandler />
             <Suspense fallback={<div className="min-h-svh w-full" />}>
-              {children}
+              <AppShell>{children}</AppShell>
             </Suspense>
             <FloatingSoundToggle />
             <Suspense fallback={null}>

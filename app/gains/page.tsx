@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Capacitor } from "@capacitor/core"
 import { createClient } from "@/lib/supabase/client"
 import { getApiUrl } from "@/lib/api-origin"
 import { SUPPORT_INBOX_EMAIL } from "@/lib/admin-config"
@@ -74,9 +73,7 @@ export default function MesGainsPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(session?.access_token
-            ? { Authorization: `Bearer ${session.access_token}` }
-            : {}),
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
         credentials: "include",
         body: JSON.stringify({ mode: "receipt_confirmed", winnerId }),
@@ -89,15 +86,9 @@ export default function MesGainsPage() {
       }
 
       if (apiRes.ok && apiJson.ok) {
-        setWins((prev) =>
-          prev.map((w) => (w.id === winnerId ? { ...w, status: "received" } : w)),
-        )
+        setWins((prev) => prev.map((w) => (w.id === winnerId ? { ...w, status: "received" } : w)))
         setFeedbackType("success")
-        setFeedback(
-          apiJson.already
-            ? "Réception déjà enregistrée."
-            : "Merci, ta réception est bien enregistrée.",
-        )
+        setFeedback(apiJson.already ? "Réception déjà enregistrée." : "Merci, ta réception est bien enregistrée.")
         return
       }
 
@@ -114,9 +105,7 @@ export default function MesGainsPage() {
         return
       }
       if (String(row.status ?? "").toLowerCase() === "received") {
-        setWins((prev) =>
-          prev.map((w) => (w.id === winnerId ? { ...w, status: "received" } : w)),
-        )
+        setWins((prev) => prev.map((w) => (w.id === winnerId ? { ...w, status: "received" } : w)))
         setFeedbackType("success")
         setFeedback("Merci, ta réception est bien enregistrée.")
         return
@@ -149,11 +138,11 @@ export default function MesGainsPage() {
         console.warn("[gains] notifications_admin insert catch:", e)
       }
 
-      setWins((prev) =>
-        prev.map((w) => (w.id === winnerId ? { ...w, status: "received" } : w)),
-      )
+      setWins((prev) => prev.map((w) => (w.id === winnerId ? { ...w, status: "received" } : w)))
       setFeedbackType("success")
-      setFeedback("Merci, ta réception est enregistrée. (Notification envoyée dès que le serveur mail est joignable.)")
+      setFeedback(
+        "Merci, ta réception est enregistrée. (Notification envoyée dès que le serveur mail est joignable.)",
+      )
     } catch (e) {
       console.warn("[gains] confirmReceipt:", e)
       setFeedbackType("error")
@@ -192,17 +181,11 @@ export default function MesGainsPage() {
           <Trophy className="h-6 w-6" />
         </div>
         <h1 className="text-2xl font-semibold text-foreground">Mes gains</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Lots remportés aux tirages et suivi de livraison.
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">Lots remportés aux tirages et suivi de livraison.</p>
       </div>
 
       {feedback ? (
-        <p
-          className={`text-center text-sm ${
-            feedbackType === "error" ? "text-destructive" : "text-emerald-400"
-          }`}
-        >
+        <p className={`text-center text-sm ${feedbackType === "error" ? "text-destructive" : "text-emerald-400"}`}>
           {feedback}
         </p>
       ) : null}
@@ -219,18 +202,13 @@ export default function MesGainsPage() {
           ) : (
             wins.map((w) => {
               const label = w.prize_name?.trim() || "Lot"
-              const date = w.created_at
-                ? new Date(w.created_at).toLocaleDateString("fr-FR")
-                : ""
+              const date = w.created_at ? new Date(w.created_at).toLocaleDateString("fr-FR") : ""
               const shipped = w.status === "shipped"
               const received = w.status === "received"
               const canConfirmReceipt = !received
 
               return (
-                <div
-                  key={w.id}
-                  className="rounded-lg border border-border/40 p-3 text-sm"
-                >
+                <div key={w.id} className="rounded-lg border border-border/40 p-3 text-sm">
                   <p className="font-semibold text-foreground">{label}</p>
                   <p className="text-xs text-muted-foreground">{date}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -254,9 +232,7 @@ export default function MesGainsPage() {
                       onClick={() => void confirmReceipt(w.id)}
                       disabled={confirming === w.id}
                     >
-                      {confirming === w.id
-                        ? "Confirmation…"
-                        : "Confirmer la réception du lot"}
+                      {confirming === w.id ? "Confirmation…" : "Confirmer la réception du lot"}
                     </Button>
                   )}
                 </div>
@@ -268,3 +244,4 @@ export default function MesGainsPage() {
     </div>
   )
 }
+

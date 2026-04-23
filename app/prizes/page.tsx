@@ -19,8 +19,9 @@ export default function PrizesPage() {
       <RewardPoolsGrid
         userId={user?.id}
         title="Catalogue cadeaux"
-        description="Tous les lots disponibles pour depenser vos points. Aucun bouton video sur cette page."
+        description="Tous les lots disponibles pour dépenser vos points. Aucun bouton vidéo sur cette page."
       />
     </div>
   )
 }
+

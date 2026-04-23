@@ -150,13 +150,8 @@ export default function NotificationsPage() {
             <p className="text-sm text-muted-foreground">Aucune notification pour le moment.</p>
           ) : (
             items.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-lg bg-secondary/40 px-3 py-2 text-sm text-foreground"
-              >
-                {item.title && (
-                  <p className="font-semibold text-primary">{item.title}</p>
-                )}
+              <div key={item.id} className="rounded-lg bg-secondary/40 px-3 py-2 text-sm text-foreground">
+                {item.title && <p className="font-semibold text-primary">{item.title}</p>}
                 {item.message && <p className="text-foreground/90">{item.message}</p>}
                 <p className="mt-1 text-xs text-muted-foreground">{formatDate(item.created_at)}</p>
               </div>
@@ -167,3 +162,4 @@ export default function NotificationsPage() {
     </div>
   )
 }
+
