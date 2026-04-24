@@ -19,6 +19,7 @@ import { VideoOverlay } from "@/components/video-overlay"
 import { useToast } from "@/hooks/use-toast"
 import { Confetti } from "@/components/confetti"
 import { soundService } from "@/lib/sounds"
+import { cn } from "@/lib/utils"
 import { Capacitor } from "@capacitor/core"
 import { showRewardVideo } from "@/lib/admob-rewarded"
 import { countVideoViewsLastHour, isHourlyVideoQuotaExceeded } from "@/lib/video-quota"
@@ -104,7 +105,6 @@ export function ConcoursClient() {
   const [wheelSpinning, setWheelSpinning] = useState(false)
   const [infoModal, setInfoModal] = useState<"scratch" | "wheel" | null>(null)
   const [slotSpinning, setSlotSpinning] = useState(false)
-  const [slotBet, setSlotBet] = useState<1 | 2 | 3>(1)
   const [slotStopPhase, setSlotStopPhase] = useState<0 | 1 | 2 | 3>(0)
   const [slotResult, setSlotResult] = useState<string[] | null>(null)
   const [slotMessage, setSlotMessage] = useState<string | null>(null)
@@ -592,7 +592,7 @@ export function ConcoursClient() {
       setWheelAngle(nextWheelAngle)
       
       const roll = Math.random()
-      /** 0 = PERDU ; 1 = RÉCUPÉRÉ ; 3 = JACKPOT */
+      /** 0 = PERDU ; 1 = x1 ; 3 = x3 */
       const multiplier: 0 | 1 | 3 = roll < 0.58 ? 0 : roll < 0.92 ? 1 : 3
 
       setTimeout(async () => {
@@ -670,10 +670,6 @@ export function ConcoursClient() {
 
   const handleSlotSpin = async () => {
     if (!userId || !isVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)) return
-    if (userPoints < slotBet) {
-      toast({ title: "Points insuffisants", description: "Augmente ton solde ou baisse la mise.", variant: "destructive" })
-      return
-    }
     
     setSlotSpinning(true)
     setSlotMessage(null)
@@ -719,7 +715,9 @@ export function ConcoursClient() {
       }
 
       const nowIso = new Date().toISOString()
-      const winPoints = slotBet * multiplier
+      // Slot VIP gratuite : gain fixe basé sur multiplicateur, sans choix de mise.
+      const baseWin = 10
+      const winPoints = multiplier === 0 ? 0 : baseWin * multiplier
       const ok = await postUpdatePoints({ pointsToAdd: winPoints, timestamps: { last_vip_slot_at: nowIso } })
       if (!ok) {
         setSlotSpinning(false)
@@ -945,32 +943,13 @@ export function ConcoursClient() {
             Slot Machine VIP
           </p>
           <p className="text-sm text-slate-300 mb-4">Disponibilité : {vipSlotRemaining}</p>
-          <div className="mb-3 grid grid-cols-3 gap-2">
-            {([1, 2, 3] as const).map((bet) => (
-              <Button
-                key={bet}
-                type="button"
-                variant={slotBet === bet ? "default" : "outline"}
-                className="w-full border-amber-400/20 bg-black/30 text-amber-50 hover:bg-black/40"
-                onClick={() => setSlotBet(bet)}
-                disabled={slotSpinning}
-              >
-                Mise {bet}
-              </Button>
-            ))}
-          </div>
           <Button
             className="w-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black shadow-[0_12px_30px_rgba(245,158,11,0.20)] hover:brightness-105"
             onClick={handleSlotSpin}
-            disabled={!canPlayVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable) || userPoints < slotBet}
+            disabled={!canPlayVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)}
           >
             {slotSpinning ? "Rotation..." : "Tirer le levier"}
           </Button>
-          {userPoints < slotBet ? (
-            <p className="mt-2 text-center text-xs font-semibold text-rose-200/90">
-              Points insuffisants pour cette mise.
-            </p>
-          ) : null}
           {!canPlayVip && (
             <p className="mt-2 text-center text-xs text-yellow-200/90">{requiredGradeLabel("VIP")}</p>
           )}
@@ -1295,7 +1274,7 @@ export function ConcoursClient() {
                   ? wheelOutcome === 0
                     ? "PERDU (0x)"
                     : wheelOutcome === 1
-                      ? "RÉCUPÉRÉ (x1)"
+                      ? "x1"
                       : "JACKPOT (x3)"
                   : `Mise : ${wheelBet} point${wheelBet > 1 ? "s" : ""}`}
               </div>
