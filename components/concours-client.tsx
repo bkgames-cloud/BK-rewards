@@ -100,7 +100,7 @@ export function ConcoursClient() {
   const [scratchScratchedPct, setScratchScratchedPct] = useState(0)
   const [showWheelModal, setShowWheelModal] = useState(false)
   const [wheelBet, setWheelBet] = useState(1)
-  const [wheelOutcome, setWheelOutcome] = useState<0 | 1 | 3 | null>(null)
+  const [wheelOutcome, setWheelOutcome] = useState<0 | 1 | 2 | 3 | null>(null)
   const [wheelAngle, setWheelAngle] = useState(0)
   const [wheelSpinning, setWheelSpinning] = useState(false)
   const [infoModal, setInfoModal] = useState<"scratch" | "wheel" | null>(null)
@@ -592,8 +592,9 @@ export function ConcoursClient() {
       setWheelAngle(nextWheelAngle)
       
       const roll = Math.random()
-      /** 0 = PERDU ; 1 = x1 ; 3 = x3 */
-      const multiplier: 0 | 1 | 3 = roll < 0.58 ? 0 : roll < 0.92 ? 1 : 3
+      /** 0 = PERDU ; 1 = x1 ; 2 = x2 ; 3 = x3 */
+      const multiplier: 0 | 1 | 2 | 3 =
+        roll < 0.62 ? 0 : roll < 0.86 ? 1 : roll < 0.95 ? 2 : 3
 
       setTimeout(async () => {
         setWheelSpinning(false)
@@ -678,9 +679,11 @@ export function ConcoursClient() {
     setSlotResult(null)
 
     const spinSymbols: Array<"🍒" | "💎" | "7️⃣" | "🔔"> = ["🍒", "💎", "7️⃣", "🔔"]
-    const roll = Math.random()
-    const multiplier: 0 | 1 | 3 = roll < 0.62 ? 0 : roll < 0.93 ? 1 : 3
-    const finalSymbol = multiplier === 3 ? "7️⃣" : multiplier === 1 ? "💎" : (spinSymbols[Math.floor(Math.random() * spinSymbols.length)] ?? "🍒")
+    const final = [
+      spinSymbols[Math.floor(Math.random() * spinSymbols.length)] ?? "🍒",
+      spinSymbols[Math.floor(Math.random() * spinSymbols.length)] ?? "💎",
+      spinSymbols[Math.floor(Math.random() * spinSymbols.length)] ?? "7️⃣",
+    ] as const
 
     if (slotIntervalRef.current) window.clearInterval(slotIntervalRef.current)
     if (slotTimeoutRef.current) window.clearTimeout(slotTimeoutRef.current)
@@ -702,7 +705,7 @@ export function ConcoursClient() {
         soundService.playClickSound()
         setSlotResult((prev) => {
           const next: string[] = prev ? [...prev] : [spinSymbols[0], spinSymbols[1], spinSymbols[2]]
-          next[idx] = finalSymbol
+          next[idx] = final[idx]
           return next
         })
       }, delay)
@@ -715,9 +718,9 @@ export function ConcoursClient() {
       }
 
       const nowIso = new Date().toISOString()
-      // Slot VIP gratuite : gain fixe basé sur multiplicateur, sans choix de mise.
-      const baseWin = 10
-      const winPoints = multiplier === 0 ? 0 : baseWin * multiplier
+      const [a, b, c] = final
+      const isWin = a === b && b === c
+      const winPoints = !isWin ? 0 : a === "7️⃣" ? 30 : 10
       const ok = await postUpdatePoints({ pointsToAdd: winPoints, timestamps: { last_vip_slot_at: nowIso } })
       if (!ok) {
         setSlotSpinning(false)
@@ -725,7 +728,7 @@ export function ConcoursClient() {
         slotTimeoutRef.current = null
         return
       }
-      setSlotResult([finalSymbol, finalSymbol, finalSymbol])
+      setSlotResult([a, b, c])
       setSlotSpinning(false)
       setLastVipSlotAt(new Date(nowIso))
       setNow(Date.now())
@@ -748,10 +751,11 @@ export function ConcoursClient() {
     }, 5000)
   }
 
-  const WHEEL_SEGMENTS: Array<"PERDU" | "x1" | "x3"> = [
+  const WHEEL_SEGMENTS: Array<"PERDU" | "x1" | "x2" | "x3"> = [
     "PERDU",
     "x1",
     "PERDU",
+    "x2",
     "x1",
     "PERDU",
     "x1",
@@ -1226,7 +1230,8 @@ export function ConcoursClient() {
                     <div
                       className="relative h-full w-full rounded-full border border-white/10 bg-[conic-gradient(from_90deg,#7c3aed,#2563eb,#f59e0b,#7c3aed)] shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
                       style={{
-                        transform: `rotate(${wheelAngle}deg)`,
+                        // Le disque de la roue tourne, l'aiguille reste fixe (au-dessus, hors du disque).
+                        transform: `rotate(${-wheelAngle}deg)`,
                         transitionProperty: "transform",
                         transitionDuration: "2600ms",
                         transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -1253,7 +1258,9 @@ export function ConcoursClient() {
                                     ? "bg-black/45 text-slate-200 ring-1 ring-white/10"
                                     : label === "x1"
                                       ? "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/30"
-                                      : "bg-amber-500/18 text-amber-200 ring-1 ring-amber-400/35",
+                                      : label === "x2"
+                                        ? "bg-sky-500/15 text-sky-200 ring-1 ring-sky-400/30"
+                                        : "bg-amber-500/18 text-amber-200 ring-1 ring-amber-400/35",
                                 )}
                               >
                                 {label}
@@ -1275,7 +1282,9 @@ export function ConcoursClient() {
                     ? "PERDU (0x)"
                     : wheelOutcome === 1
                       ? "x1"
-                      : "JACKPOT (x3)"
+                      : wheelOutcome === 2
+                        ? "x2"
+                        : "JACKPOT (x3)"
                   : `Mise : ${wheelBet} point${wheelBet > 1 ? "s" : ""}`}
               </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
