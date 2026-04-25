@@ -104,6 +104,7 @@ export function ConcoursClient() {
   const [wheelAngle, setWheelAngle] = useState(0)
   const [wheelSpinning, setWheelSpinning] = useState(false)
   const [infoModal, setInfoModal] = useState<"scratch" | "wheel" | null>(null)
+  const [showSlotModal, setShowSlotModal] = useState(false)
   const [slotSpinning, setSlotSpinning] = useState(false)
   const [slotStopPhase, setSlotStopPhase] = useState<0 | 1 | 2 | 3>(0)
   const [slotResult, setSlotResult] = useState<string[] | null>(null)
@@ -119,6 +120,9 @@ export function ConcoursClient() {
   const [tapArenaCount, setTapArenaCount] = useState(0)
   const [tapArenaTimeLeft, setTapArenaTimeLeft] = useState(30)
   const [tapArenaResult, setTapArenaResult] = useState<string | null>(null)
+  const [tapHeat, setTapHeat] = useState(0) // 0..1
+  const [tapShakeTick, setTapShakeTick] = useState(0)
+  const [tapFloaters, setTapFloaters] = useState<Array<{ id: string; x: number; y: number }>>([])
   const [tapLeaderboard, setTapLeaderboard] = useState<LeaderboardEntry[]>([])
   /** Anti double déblocage Scratch après une seule pub AdMob. */
   const scratchPostAdHandledRef = useRef(false)
@@ -588,13 +592,36 @@ export function ConcoursClient() {
       setLastWheelAt(new Date(nowIso))
       setNow(Date.now())
       setWheelSpinning(true)
-      const nextWheelAngle = wheelAngle + 1440 + Math.floor(Math.random() * 1080)
-      setWheelAngle(nextWheelAngle)
       
       const roll = Math.random()
       /** 0 = PERDU ; 1 = x1 ; 2 = x2 ; 3 = x3 */
       const multiplier: 0 | 1 | 2 | 3 =
         roll < 0.62 ? 0 : roll < 0.86 ? 1 : roll < 0.95 ? 2 : 3
+
+      // Synchronisation visuelle: on choisit un segment gagnant (index) puis on calcule l'angle
+      // pour aligner le MILIEU du segment sous l'aiguille (en haut).
+      const indices = WHEEL_SEGMENTS
+        .map((v, idx) => ({ v, idx }))
+        .filter(({ v }) => {
+          if (multiplier === 0) return v === "PERDU"
+          if (multiplier === 1) return v === "x1"
+          if (multiplier === 2) return v === "x2"
+          return v === "x3"
+        })
+        .map(({ idx }) => idx)
+
+      const winningIndex =
+        indices.length > 0
+          ? indices[Math.floor(Math.random() * indices.length)]!
+          : Math.floor(Math.random() * WHEEL_SEGMENTS.length)
+
+      const step = 360 / WHEEL_SEGMENTS.length
+      const winningCenterAngle = step * winningIndex + step / 2
+      const current = ((wheelAngle % 360) + 360) % 360
+      let delta = winningCenterAngle - current
+      if (delta < 0) delta += 360
+      const nextWheelAngle = wheelAngle + 1440 + delta
+      setWheelAngle(nextWheelAngle)
 
       setTimeout(async () => {
         setWheelSpinning(false)
@@ -816,8 +843,33 @@ export function ConcoursClient() {
     if (tapArenaActive) {
       setTapArenaCount(c => c + 1)
       tapArenaCountRef.current += 1
+      setTapShakeTick((t) => t + 1)
+      const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      // Petites variations pour l’effet “+1” qui pop
+      const x = (Math.random() - 0.5) * 24
+      const y = -10 - Math.random() * 8
+      setTapFloaters((f) => [...f, { id, x, y }].slice(-18))
+
+      const nowTs = Date.now()
+      const last = tapLastClickRef.current || 0
+      tapLastClickRef.current = nowTs
+      const dt = Math.max(1, nowTs - last)
+      const cps = Math.min(12, 1000 / dt)
+      const target = Math.min(1, Math.max(0, (cps - 2) / 8)) // 2 cps = froid, 10 cps = chaud
+      setTapHeat((h) => Math.max(0, Math.min(1, h * 0.75 + target * 0.35)))
     }
   }
+
+  useEffect(() => {
+    if (!tapArenaActive) {
+      setTapHeat(0)
+      return
+    }
+    const id = window.setInterval(() => {
+      setTapHeat((h) => Math.max(0, h - 0.03))
+    }, 120)
+    return () => window.clearInterval(id)
+  }, [tapArenaActive])
 
   // --- 4. GESTION DES REFS ---
   const videoContextLabel = videoAction === "scratch" ? "BKG Scratch" : "BKG Wheel"
@@ -949,10 +1001,10 @@ export function ConcoursClient() {
           <p className="text-sm text-slate-300 mb-4">Disponibilité : {vipSlotRemaining}</p>
           <Button
             className="w-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black shadow-[0_12px_30px_rgba(245,158,11,0.20)] hover:brightness-105"
-            onClick={handleSlotSpin}
+            onClick={() => setShowSlotModal(true)}
             disabled={!canPlayVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)}
           >
-            {slotSpinning ? "Rotation..." : "Tirer le levier"}
+            Ouvrir la machine
           </Button>
           {!canPlayVip && (
             <p className="mt-2 text-center text-xs text-yellow-200/90">{requiredGradeLabel("VIP")}</p>
@@ -1004,6 +1056,126 @@ export function ConcoursClient() {
         </Card>
       </div>
 
+      {showSlotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <Card className="relative w-full max-w-md overflow-hidden border border-amber-400/25 bg-gradient-to-br from-[#050508] via-[#120a05] to-[#030303] p-6 text-white shadow-[0_22px_80px_rgba(0,0,0,0.65)]">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(245,158,11,0.22),transparent_55%),radial-gradient(circle_at_80%_35%,rgba(59,130,246,0.10),transparent_60%)]" />
+            <div className="relative">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-amber-200/80">Casino VIP</p>
+                  <h3 className="mt-1 text-xl font-extrabold text-white">Slot Machine</h3>
+                  <p className="mt-2 text-sm text-slate-300">3 symboles identiques = gain</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-slate-300/70 hover:text-white"
+                  onClick={() => setShowSlotModal(false)}
+                  disabled={slotSpinning}
+                >
+                  Fermer
+                </Button>
+              </div>
+
+              <div className="mt-5 grid grid-cols-[1fr_auto] gap-4 items-center">
+                {/* Machine frame */}
+                <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-black/60 to-black/25 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05),0_18px_60px_rgba(0,0,0,0.55)]">
+                  <div className="pointer-events-none absolute inset-0 rounded-3xl bg-[linear-gradient(135deg,rgba(245,158,11,0.32),rgba(255,255,255,0.06),rgba(59,130,246,0.12))] opacity-70" />
+                  <div className="relative">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-xs font-semibold tracking-wider text-amber-200/80">VIP MACHINE</span>
+                      <span className="text-xs text-slate-300/80">Disponibilité : {vipSlotRemaining}</span>
+                    </div>
+
+                    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/45 p-3">
+                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(245,158,11,0.12),transparent_60%)]" />
+                      <div className="relative grid grid-cols-3 gap-2">
+                        {(slotResult ?? ["🍒", "💎", "7️⃣"]).map((s, idx) => (
+                          <motion.div
+                            key={`${slotSpinSeed}-${idx}-${s}`}
+                            className="flex h-16 items-center justify-center rounded-2xl border border-white/10 bg-black/35 text-3xl shadow-inner backdrop-blur-sm"
+                            animate={
+                              slotSpinning && idx >= slotStopPhase
+                                ? { y: [0, -22, 0], filter: ["blur(2px)", "blur(4px)", "blur(2px)"] }
+                                : { y: 0, scale: [1, 1.07, 1], filter: "blur(0px)" }
+                            }
+                            transition={
+                              slotSpinning && idx >= slotStopPhase
+                                ? { duration: 0.16, repeat: Infinity, ease: "linear" }
+                                : { duration: 0.35, ease: [0.175, 0.885, 0.32, 1.275] }
+                            }
+                          >
+                            {s}
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <Button
+                        className="w-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-black shadow-[0_12px_30px_rgba(245,158,11,0.22)] hover:brightness-105"
+                        onClick={handleSlotSpin}
+                        disabled={!canPlayVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)}
+                      >
+                        {slotSpinning ? "Rotation..." : "Tirer le levier"}
+                      </Button>
+                      {!canPlayVip ? (
+                        <p className="mt-2 text-center text-xs text-yellow-200/90">{requiredGradeLabel("VIP")}</p>
+                      ) : null}
+                      {slotMessage ? (
+                        <motion.p
+                          className="mt-3 text-center text-sm font-semibold text-amber-200"
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.18 }}
+                        >
+                          {slotMessage}
+                        </motion.p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Lever */}
+                <div className="relative h-[230px] w-[70px]">
+                  <div className="absolute left-1/2 top-2 h-[190px] w-[16px] -translate-x-1/2 rounded-full bg-gradient-to-b from-[#2a2a2a] to-[#070707] ring-1 ring-white/10 shadow-inner" />
+                  <motion.div
+                    className="absolute left-1/2 top-6 h-[170px] w-[16px] -translate-x-1/2 origin-top rounded-full bg-gradient-to-b from-amber-200/20 to-amber-500/10 ring-1 ring-amber-300/15"
+                    animate={slotSpinning ? { rotate: 18, y: 14 } : { rotate: 0, y: 0 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 18 }}
+                  />
+                  <motion.div
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Tirer le levier"
+                    onClick={() => {
+                      if (!canPlayVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)) return
+                      void handleSlotSpin()
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" && e.key !== " ") return
+                      e.preventDefault()
+                      if (!canPlayVip || slotSpinning || (!vipSlotAvailable && !slotExtraSpinAvailable)) return
+                      void handleSlotSpin()
+                    }}
+                    className={cn(
+                      "absolute left-1/2 top-0 h-10 w-10 -translate-x-1/2 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-600 shadow-[0_10px_25px_rgba(245,158,11,0.35)] ring-2 ring-amber-200/30",
+                      canPlayVip && !slotSpinning && (vipSlotAvailable || slotExtraSpinAvailable)
+                        ? "cursor-pointer hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-200/60"
+                        : "cursor-not-allowed opacity-60",
+                    )}
+                    animate={slotSpinning ? { y: 34, rotate: 10 } : { y: 0, rotate: 0 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 16 }}
+                  />
+                  <div className="pointer-events-none absolute bottom-2 left-1/2 h-6 w-12 -translate-x-1/2 rounded-2xl bg-black/40 ring-1 ring-white/10" />
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* --- ZONE TAP-TAP (VIP+) --- */}
       {!canPlayVipPlus ? (
         /* MODE BLOQUÉ POUR LES NON-VIP+ */
@@ -1048,13 +1220,95 @@ export function ConcoursClient() {
           <div className="text-3xl font-black text-center my-4 text-white">
             {tapArenaCount} <span className="text-sm font-normal text-blue-300">TAPS</span>
           </div>
-          <Button 
-            className={`w-full font-bold h-12 ${tapArenaActive ? 'bg-red-600 animate-pulse' : 'bg-blue-600'}`} 
-            onClick={tapArenaActive ? handleTapArenaClick : startTapArena} 
-            disabled={isTapTapSessionClosed}
-          >
-            {isTapTapSessionClosed ? "SESSION TERMINEE" : tapArenaActive ? `VITE ! (${tapArenaTimeLeft}s)` : "DEMARRER LE DEFI"}
-          </Button>
+          {/* Heat bar */}
+          <div className="mb-3">
+            <div className="flex items-center justify-between text-xs text-slate-300">
+              <span className="font-semibold tracking-wider">HEAT</span>
+              <span className={cn("font-semibold", tapHeat > 0.75 ? "text-amber-300" : tapHeat > 0.35 ? "text-sky-300" : "text-slate-300")}>
+                {tapHeat > 0.75 ? "🔥 MAX" : tapHeat > 0.35 ? "⚡ CHAUD" : "❄️ FROID"}
+              </span>
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-black/40 ring-1 ring-white/10">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-sky-400 via-violet-400 to-amber-300"
+                animate={{ width: `${Math.round(tapHeat * 100)}%` }}
+                transition={{ duration: 0.12, ease: "linear" }}
+              />
+            </div>
+          </div>
+
+          {/* Arcade button 3D */}
+          <div className="relative">
+            {/* Floaters "+1" */}
+            <div className="pointer-events-none absolute inset-0">
+              {tapFloaters.map((f) => (
+                <motion.div
+                  key={f.id}
+                  className="absolute left-1/2 top-1/2 text-sm font-black text-white drop-shadow-[0_10px_20px_rgba(59,130,246,0.35)]"
+                  initial={{ opacity: 0, x: f.x, y: f.y, scale: 0.9 }}
+                  animate={{ opacity: [0, 1, 0], y: f.y - 26, scale: [0.9, 1.05, 1] }}
+                  transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+                  onAnimationComplete={() => {
+                    setTapFloaters((arr) => arr.filter((x) => x.id !== f.id))
+                  }}
+                >
+                  +1
+                </motion.div>
+              ))}
+            </div>
+
+            <motion.button
+              type="button"
+              disabled={isTapTapSessionClosed}
+              onClick={tapArenaActive ? handleTapArenaClick : startTapArena}
+              className={cn(
+                "group relative w-full select-none rounded-2xl px-5 py-4 text-center font-black tracking-wide text-white",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60",
+                isTapTapSessionClosed ? "opacity-60 cursor-not-allowed" : "cursor-pointer",
+              )}
+              animate={tapArenaActive ? { scale: [1, 1.01, 1] } : { scale: 1 }}
+              transition={{ duration: 0.25 }}
+            >
+              {/* Base shadow */}
+              <span className="pointer-events-none absolute inset-0 translate-y-[10px] rounded-2xl bg-black/55 blur-[10px]" />
+              {/* 3D base */}
+              <span
+                className={cn(
+                  "pointer-events-none absolute inset-0 rounded-2xl",
+                  tapArenaActive
+                    ? "bg-gradient-to-b from-red-500/90 to-red-700/90"
+                    : "bg-gradient-to-b from-sky-500/90 to-blue-700/90",
+                )}
+              />
+              {/* Rim */}
+              <span className="pointer-events-none absolute inset-[2px] rounded-2xl ring-1 ring-white/10" />
+              {/* Top cap (press effect) */}
+              <motion.span
+                className={cn(
+                  "absolute inset-[6px] rounded-2xl",
+                  tapArenaActive
+                    ? "bg-gradient-to-b from-red-400 to-red-600"
+                    : "bg-gradient-to-b from-sky-400 to-blue-600",
+                  "shadow-[inset_0_10px_25px_rgba(255,255,255,0.12),inset_0_-12px_18px_rgba(0,0,0,0.45)]",
+                )}
+                animate={
+                  tapArenaActive && tapShakeTick > 0
+                    ? { x: [0, -2, 2, -2, 2, 0], y: [0, 1, -1, 1, 0], rotate: [0, -0.6, 0.6, -0.6, 0.6, 0] }
+                    : { x: 0, y: 0, rotate: 0 }
+                }
+                transition={{ duration: 0.18 }}
+                whileTap={{ y: 2, scale: 0.99 }}
+              />
+              {/* Label */}
+              <span className="relative block">
+                {isTapTapSessionClosed
+                  ? "SESSION TERMINEE"
+                  : tapArenaActive
+                    ? `TAP ! (${tapArenaTimeLeft}s)`
+                    : "DEMARRER LE DEFI"}
+              </span>
+            </motion.button>
+          </div>
           {tapArenaResult && <p className="text-center text-xs mt-2 text-green-400">{tapArenaResult}</p>}
         </Card>
       )}
