@@ -1239,21 +1239,27 @@ export function ConcoursClient() {
                     >
                       {/* Segments glow + profondeur */}
                       <div className="absolute inset-0 rounded-full shadow-[inset_0_0_35px_rgba(0,0,0,0.6)]" />
-                      {/* Rim labels (PERDU / x1 / x3) */}
-                      <div className="pointer-events-none absolute inset-0">
+                      {/* Rim labels (PERDU / x1 / x2 / x3) */}
+                      <div className="pointer-events-none absolute inset-0 z-20">
                         {WHEEL_SEGMENTS.map((label, i) => {
-                          const angle = (360 / WHEEL_SEGMENTS.length) * i
+                          const step = 360 / WHEEL_SEGMENTS.length
+                          // Centre le label au milieu exact de la "part"
+                          const angle = step * i + step / 2
+                          // Décale vers l’extérieur (~18% de plus que -74px)
+                          const radiusPx = 98
                           return (
                             <div
                               key={`${label}-${i}`}
                               className="absolute left-1/2 top-1/2"
                               style={{
-                                transform: `rotate(${angle}deg) translateY(-74px) rotate(${-angle}deg)`,
+                                // translate(-50%,-50%) pour un centrage parfait, puis rotation/translation sur le rayon
+                                // IMPORTANT: le label tourne AVEC la roue (pas de contre-rotation).
+                                transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(-${radiusPx}px)`,
                               }}
                             >
                               <div
                                 className={cn(
-                                  "select-none rounded-full px-2 py-0.5 text-[10px] font-extrabold tracking-wider shadow-sm",
+                                  "select-none rounded-full px-2 py-0.5 text-[9px] font-extrabold tracking-wider shadow-sm leading-none",
                                   label === "PERDU"
                                     ? "bg-black/45 text-slate-200 ring-1 ring-white/10"
                                     : label === "x1"
@@ -1270,7 +1276,7 @@ export function ConcoursClient() {
                         })}
                       </div>
                       {/* Centre vide (sans texte) */}
-                      <div className="absolute inset-6 rounded-full bg-black/40 backdrop-blur-sm" />
+                      <div className="absolute inset-8 z-10 rounded-full bg-black/40 backdrop-blur-sm" />
                     </div>
                   </div>
                 </div>
