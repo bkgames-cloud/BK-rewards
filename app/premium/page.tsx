@@ -12,7 +12,13 @@ import { useToast } from "@/hooks/use-toast"
 import { notificationService } from "@/lib/notifications"
 import { soundService } from "@/lib/sounds"
 import { Confetti } from "@/components/confetti"
-import { PaymentService, buyVIP, buyVIPPlus } from "@/lib/payment-service"
+import {
+  PaymentService,
+  buyVIP,
+  buyVIPPlus,
+  filterSubscriptionBannerMessage,
+  isAndroidEmbeddedPaymentShell,
+} from "@/lib/payment-service"
 import {
   GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
   GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
@@ -231,10 +237,13 @@ export default function PremiumPage() {
       router.refresh()
     } catch (error) {
       console.error("[premium] VIP+ subscribe:", error)
+      const raw =
+        error instanceof Error ? error.message : "Une erreur est survenue lors de l'abonnement VIP+."
+      const safe = filterSubscriptionBannerMessage(raw)
+      if (!safe) return
       toast({
         title: "Erreur",
-        description:
-          error instanceof Error ? error.message : "Une erreur est survenue lors de l'abonnement VIP+.",
+        description: safe,
         variant: "destructive",
       })
     }
@@ -278,7 +287,7 @@ export default function PremiumPage() {
   }
 
   const handleOpenPortal = async () => {
-    if (PaymentService.isAndroidNative()) {
+    if (PaymentService.isAndroidNative() || isAndroidEmbeddedPaymentShell()) {
       return
     }
     try {

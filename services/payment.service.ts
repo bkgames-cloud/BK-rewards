@@ -10,6 +10,66 @@ import {
 import { createClient } from "@/lib/supabase/client"
 
 /**
+ * Doit être invoquée avant toute lecture des variables / SDK Stripe (côté navigateur).
+ * Sur Android natif : sortie immédiate — aucune clé ni `NEXT_PUBLIC_STRIPE_*` n’est consulté.
+ */
+export function initializeStripe(): unknown[] {
+  const isAndroid =
+    typeof window !== "undefined" &&
+    Capacitor.isNativePlatform() &&
+    Capacitor.getPlatform() === "android"
+  if (isAndroid) return []
+  return []
+}
+
+/**
+ * WebView embarquée (Capacitor et/ou Cordova) sur Android — utile quand `isNativePlatform()` n’est pas encore fiable.
+ * Permet de masquer les messages d’erreur liés à Stripe alors que le billing réel est Google Play.
+ */
+export function isAndroidEmbeddedPaymentShell(): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android") return true
+  } catch {
+    /* Capacitor pas prêt */
+  }
+  try {
+    const p = (
+      window as unknown as {
+        Capacitor?: { getPlatform?: () => string }
+      }
+    ).Capacitor
+    if (p?.getPlatform?.() === "android") return true
+  } catch {
+    /* ignore */
+  }
+  return !!(
+    (window as Window & { cordova?: unknown }).cordova &&
+    typeof navigator !== "undefined" &&
+    /Android/i.test(navigator.userAgent)
+  )
+}
+
+/** Erreurs configuration / portail Stripe (pas des erreurs Google Play). */
+export function isStripeInfrastructureUserMessage(text: string): boolean {
+  return (
+    /NEXT_PUBLIC_STRIPE/i.test(text) ||
+    /Paiement Stripe indisponible/i.test(text) ||
+    /Portail Stripe indisponible/i.test(text) ||
+    /Paiement VIP\+ indisponible.*STRIPE/i.test(text) ||
+    /lien Stripe/i.test(text)
+  )
+}
+
+/** `null` = ne rien afficher (toasts / bandeau) sur l’app Android embarquée. */
+export function filterSubscriptionBannerMessage(text: string | null | undefined): string | null {
+  if (!text?.trim()) return null
+  const t = text.trim()
+  if (isAndroidEmbeddedPaymentShell() && isStripeInfrastructureUserMessage(t)) return null
+  return t
+}
+
+/**
  * Paiements hybrides (Web / Android natif Capacitor)
  *
  * **Web** : redirection vers les liens Stripe (`NEXT_PUBLIC_STRIPE_*_LINK`).
@@ -313,6 +373,7 @@ export async function buyVIP(
   accessToken: string | null | undefined,
   period: VipBillingPeriod = "monthly",
 ): Promise<void> {
+  initializeStripe()
   if (!PaymentService.isAndroidNative()) {
     const link =
       period === "weekly"
@@ -338,6 +399,7 @@ export async function buyVIPPlus(
   accessToken: string | null | undefined,
   period: VipBillingPeriod = "monthly",
 ): Promise<void> {
+  initializeStripe()
   if (!PaymentService.isAndroidNative()) {
     if (period === "weekly") {
       const weekly = process.env.NEXT_PUBLIC_STRIPE_VIP_PLUS_WEEKLY_LINK?.trim()
@@ -426,6 +488,7 @@ export class PaymentService {
     plan: SubscribePlan
     accessToken: string | null | undefined
   }): Promise<void> {
+    initializeStripe()
     const { plan, accessToken } = params
 
     if (PaymentService.isAndroidNative()) {

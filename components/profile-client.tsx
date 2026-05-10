@@ -16,7 +16,7 @@ import { Confetti } from "@/components/confetti"
 import { emailMatchesAdmin } from "@/lib/admin-config"
 import { gradeToFlags, normalizeGrade } from "@/lib/grade"
 import { getApiUrl } from "@/lib/api-origin"
-import { PaymentService, buyVIP, buyVIPPlus } from "@/lib/payment-service"
+import { PaymentService, buyVIP, buyVIPPlus, filterSubscriptionBannerMessage } from "@/lib/payment-service"
 import {
   GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
   GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
@@ -585,12 +585,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   }, [user?.id, sessionLoading, sessionUserId])
 
   const billingThroughGooglePlay = PaymentService.isAndroidNative()
-  const visibleSubscriptionMessage =
-    subscriptionMessage &&
-    billingThroughGooglePlay &&
-    /stripe/i.test(subscriptionMessage)
-      ? null
-      : subscriptionMessage
+  const visibleSubscriptionMessage = filterSubscriptionBannerMessage(subscriptionMessage)
 
   return (
     <div className="flex flex-col gap-4 p-4 max-w-lg mx-auto">

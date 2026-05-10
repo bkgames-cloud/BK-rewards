@@ -28,7 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { countVideoViewsLastHour, isHourlyVideoQuotaExceeded } from "@/lib/video-quota"
 import { OFFERS_ENABLED } from "@/lib/offerwall-ui"
-import { PaymentService, buyVIP, buyVIPPlus } from "@/lib/payment-service"
+import { PaymentService, buyVIP, buyVIPPlus, isAndroidEmbeddedPaymentShell } from "@/lib/payment-service"
 import {
   GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
   GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
@@ -469,6 +469,7 @@ export function DashboardClient({
     (url: string | undefined | null, label: string) => {
       const u = (url ?? "").trim()
       if (!u) {
+        if (PaymentService.isAndroidNative() || isAndroidEmbeddedPaymentShell()) return
         toast({
           title: "Paiement indisponible",
           description: `Lien Stripe ${label} manquant (NEXT_PUBLIC_STRIPE_*).`,
