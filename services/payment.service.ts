@@ -50,22 +50,32 @@ export function isAndroidEmbeddedPaymentShell(): boolean {
   )
 }
 
-/** Erreurs configuration / portail Stripe (pas des erreurs Google Play). */
+/** Erreurs ou mentions configuration Stripe côté Web (aucune chaîne d’erreur métier figée ici). */
 export function isStripeInfrastructureUserMessage(text: string): boolean {
-  return (
-    /NEXT_PUBLIC_STRIPE/i.test(text) ||
-    /Paiement Stripe indisponible/i.test(text) ||
-    /Portail Stripe indisponible/i.test(text) ||
-    /Paiement VIP\+ indisponible.*STRIPE/i.test(text) ||
-    /lien Stripe/i.test(text)
-  )
+  return /\bstripe\b/i.test(text) || /NEXT_PUBLIC_STRIPE/i.test(text)
 }
 
-/** `null` = ne rien afficher (toasts / bandeau) sur l’app Android embarquée. */
+/**
+ * Texte utilisateur après flux checkout/abonnement.
+ * Sur Android : `null` dès que le message évoque Stripe (rien à afficher côté Google Play).
+ */
 export function filterSubscriptionBannerMessage(text: string | null | undefined): string | null {
   if (!text?.trim()) return null
   const t = text.trim()
-  if (isAndroidEmbeddedPaymentShell() && isStripeInfrastructureUserMessage(t)) return null
+
+  let onAndroidBillingShell = false
+  if (typeof window !== "undefined") {
+    try {
+      onAndroidBillingShell =
+        isAndroidEmbeddedPaymentShell() ||
+        (Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android")
+    } catch {
+      onAndroidBillingShell = isAndroidEmbeddedPaymentShell()
+    }
+  }
+
+  if (onAndroidBillingShell && isStripeInfrastructureUserMessage(t)) return null
+
   return t
 }
 
@@ -380,11 +390,7 @@ export async function buyVIP(
         ? process.env.NEXT_PUBLIC_STRIPE_WEEKLY_LINK
         : process.env.NEXT_PUBLIC_STRIPE_MONTHLY_LINK
     if (!link) {
-      throw new Error(
-        period === "weekly"
-          ? "Paiement Stripe indisponible (NEXT_PUBLIC_STRIPE_WEEKLY_LINK manquant)."
-          : "Paiement Stripe indisponible (NEXT_PUBLIC_STRIPE_MONTHLY_LINK manquant).",
-      )
+      return
     }
     window.location.href = link
     return
@@ -407,13 +413,11 @@ export async function buyVIPPlus(
         window.location.href = weekly
         return
       }
-      throw new Error(
-        "Offre VIP+ hebdomadaire indisponible ici (NEXT_PUBLIC_STRIPE_VIP_PLUS_WEEKLY_LINK manquant).",
-      )
+      return
     }
     const vipPlus = process.env.NEXT_PUBLIC_STRIPE_VIP_PLUS_LINK
     if (!vipPlus) {
-      throw new Error("Paiement VIP+ indisponible (NEXT_PUBLIC_STRIPE_VIP_PLUS_LINK manquant).")
+      return
     }
     window.location.href = vipPlus
     return
@@ -517,7 +521,7 @@ export class PaymentService {
 
     checkoutUrl = (checkoutUrl ?? "").trim()
     if (!checkoutUrl) {
-      throw new Error("Paiement Stripe indisponible (variables NEXT_PUBLIC_STRIPE_* manquantes).")
+      return
     }
     window.location.href = checkoutUrl
   }
