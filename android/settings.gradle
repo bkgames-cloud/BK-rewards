@@ -1,5 +1,42 @@
-include ':app'
-include ':capacitor-cordova-android-plugins'
-project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 
-apply from: 'capacitor.settings.gradle'
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'bk-rewards-mobile-app'
+include ':app'
+
+// Lien manuel (autolinking CLI + include manquant) : native_modules.gradle référence project(':react-native-webview')
+include ':react-native-webview'
+project(':react-native-webview').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-webview/android')
+
+// Lien manuel : react-native-iap (Google Play Billing)
+include ':react-native-iap'
+project(':react-native-iap').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-iap/android')
+
+includeBuild('../node_modules/@react-native/gradle-plugin')
+
+// Expo Modules autolinking (nécessaire pour expo.modules.* + PackageList)
+try {
+    apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle")
+    useExpoModules()
+} catch (Throwable ignored) {
+    // Fallback demandé (certains templates mentionnent autolinking.rb)
+    try {
+        apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.rb")
+        useExpoModules()
+    } catch (Throwable ignored2) {
+        // Expo non installé / node_modules absent : les scripts seront résolus après npm/yarn install.
+    }
+}

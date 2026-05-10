@@ -1,75 +1,111 @@
-apply plugin: 'com.android.application'
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+// React Native community CLI autolinking (PackageList / native modules)
+apply from: new File(["node", "--print", "require.resolve('@react-native-community/cli-platform-android/package.json')"].execute(null, null).text.trim(), "../native_modules.gradle");
+applyNativeModulesAppBuildGradle(project)
+
+// React Native (react.gradle)
+try {
+    apply from: new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), "../react.gradle")
+} catch (Throwable ignored) {
+    // node_modules absent : sera résolu après npm/yarn install
+}
+
+// Expo (scripts Gradle)
+try {
+    apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/expo.gradle")
+} catch (Throwable ignored) {
+    // Certains templates n'ont pas expo.gradle ; l'autolinking via settings.gradle suffit.
+}
+
+// Expo Modules autolinking (ajoute les dépendances qui fournissent `expo.modules.*`)
+def expoAutolinking = file("../../node_modules/expo/scripts/autolinking.gradle")
+if (expoAutolinking.exists()) {
+    apply from: expoAutolinking
+} else {
+    try {
+        apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle")
+    } catch (Throwable ignored) {
+        // node_modules absent : sera résolu après npm/yarn install
+    }
+}
+
+// On force le chemin de node ici pour corriger ProcessOutputValueSource
+project.ext.react = [
+    nodeExecutableAndArgs: ["/usr/local/bin/node"]
+]
 
 android {
-    namespace = "com.bkrewards.rewards"
-    compileSdk = rootProject.ext.compileSdkVersion
-    def ksPath = System.getenv("BK_KEYSTORE_PATH")
-    def ksPass = System.getenv("BK_KEYSTORE_PASSWORD")
-    def keyAlias = System.getenv("BK_KEY_ALIAS")
-    def keyPass = System.getenv("BK_KEY_PASSWORD")
-    if (ksPath && ksPass && keyAlias && keyPass) {
-        signingConfigs {
-            release {
-                storeFile file(ksPath)
-                storePassword ksPass
-                keyAlias keyAlias
-                keyPassword keyPass
-            }
+    ndkVersion "26.1.10909125"
+    compileSdkVersion 34
+    buildToolsVersion "34.0.0"
+    namespace "com.bk.rewards"
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
+
     defaultConfig {
-        applicationId "com.bkrewards.rewards"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "1.0.5"
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
-        }
+        applicationId "com.bk.rewards"
+        minSdkVersion 23
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+
+        missingDimensionStrategy 'store', 'play'
     }
-    buildTypes {
-        release {
-            /** R8 / ProGuard : obfuscation + optimisation (bundle release Google Play). */
-            minifyEnabled true
-            shrinkResources false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            if (signingConfigs.findByName("release") != null) {
-                signingConfig signingConfigs.release
-            }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
+}
+
+// Apply static values from `gradle.properties` to the `android.packagingOptions`
+// Accepts values in comma delimited lists, example:
+// android.packagingOptions.pickFirsts=/LICENSE,**/picasa.ini
+["pickFirsts", "excludes", "merges", "doNotStrip"].each { prop ->
+    // Split option: 'foo,bar' -> ['foo', 'bar']
+    def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",");
+    // Trim all elements in place.
+    for (i in 0..<options.size()) options[i] = options[i].trim();
+    // `[] - ""` is essentially `[""].filter(Boolean)` removing all empty strings.
+    options -= ""
+
+    if (options.length > 0) {
+        println "android.packagingOptions.$prop += $options ($options.length)"
+        // Ex: android.packagingOptions.pickFirsts += '**/SCCS/**'
+        options.each {
+            android.packagingOptions[prop] += it
         }
     }
 }
 
-repositories {
-    flatDir{
-        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
-    }
-}
+// JavaScriptCore (fallback si Hermes désactivé)
+def jscFlavor = 'org.webkit:android-jsc:+'
 
 dependencies {
-    implementation fileTree(include: ['*.jar'], dir: 'libs')
-    /** Google Play Billing (utilisé par cordova-plugin-purchase / achats in-app). */
-    implementation "com.android.billingclient:billing-ktx:7.1.1"
-    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
-    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
-    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
-    implementation project(':capacitor-android')
-    testImplementation "junit:junit:$junitVersion"
-    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
-    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
-    implementation project(':capacitor-cordova-android-plugins')
-}
+    // Le moteur de React Native
+    implementation("com.facebook.react:react-android")
 
-apply from: 'capacitor.build.gradle'
-
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
     }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+
+    implementation project(':react-native-webview')
+    implementation project(':react-native-iap')
 }

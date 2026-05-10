@@ -385,7 +385,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const handleManageSubscription = async () => {
     setSubscriptionMessage(null)
     if (PaymentService.isAndroidNative()) {
-      setSubscriptionMessage("Gestion abonnement : disponible uniquement sur le Web (Stripe).")
+      // Sur Android, on ne montre pas de message Stripe (Google Play gère les abonnements).
       return
     }
     try {
@@ -401,7 +401,7 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
         return
       }
       if (PaymentService.isAndroidNative()) {
-        setSubscriptionMessage("Gestion abonnement : disponible uniquement sur le Web (Stripe).")
+        // Double-check (par sécurité) : pas de message Stripe sur Android
         return
       }
       window.location.href = data.url
@@ -448,7 +448,13 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
         router.refresh()
       }
     } catch (e) {
-      setSubscriptionMessage(e instanceof Error ? e.message : "Erreur abonnement.")
+      const msg = e instanceof Error ? e.message : "Erreur abonnement."
+      // Sur Android, on évite d’afficher toute référence aux variables Stripe.
+      setSubscriptionMessage(
+        PaymentService.isAndroidNative() && msg.toLowerCase().includes("stripe")
+          ? "Erreur paiement. Réessaie plus tard."
+          : msg,
+      )
     }
   }
 

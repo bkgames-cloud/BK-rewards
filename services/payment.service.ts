@@ -1,26 +1,20 @@
 import { App } from "@capacitor/app"
-import { Capacitor } from "@capacitor/core"
+import { Platform } from "react-native"
 import {
   ANDROID_PACKAGE_NAME,
-  GOOGLE_PLAY_RSA_PUBLIC_KEY_BASE64,
   GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
   GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
   GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID,
 } from "@/lib/payment-constants"
 import { createClient } from "@/lib/supabase/client"
-import { verifyGooglePlayReceiptSignature } from "@/lib/google-play-signature"
 
 /**
  * Paiements hybrides (Web / Android natif)
  *
  * **Web** : redirection vers les liens Stripe (`NEXT_PUBLIC_STRIPE_*_LINK`).
  *
- * **Android** : `cordova-plugin-purchase` (Google Play Billing). Prérequis côté projet :
- * - `android/app/src/main/AndroidManifest.xml` : permission `com.android.vending.BILLING` + `<queries>` Billing
- * - `android/app/build.gradle` : dépendance `billing-ktx`
- * - Produits Play Console : `vip-hebdo-bkg`, `vip-mensuel-bkg`, `vip_plus_mensuel_bkg`
- *   — alignés sur `lib/payment-constants.ts` / `NEXT_PUBLIC_GOOGLE_PLAY_*_ID`
- * - API `/api/verify-google-purchase` : valide le reçu et enregistre dans `public.purchases` (service role)
+ * **Android** : `react-native-iap` (Google Play Billing). Validation via Edge `verify-google-purchase`
+ * (enregistre dans `public.purchases`).
  */
 
 export type SubscribePlan = "weekly" | "monthly"
@@ -30,37 +24,9 @@ export type AndroidPriceLabels = {
   vipPlusMonthly: string
 }
 
-type CdvWindow = Window & {
-  CdvPurchase?: {
-    store: CdvStore
-    ProductType: { PAID_SUBSCRIPTION: string }
-    Platform: { GOOGLE_PLAY: string }
-    ErrorCode: { PAYMENT_CANCELLED: number }
-  }
-}
-
-type CdvStore = {
-  register: (p: { id: string; type: string; platform: string }) => void
-  initialize: (platforms: string[]) => Promise<unknown[]>
-  update: () => Promise<void>
-  get: (id: string, platform?: string) => CdvProduct | undefined
-  when: () => { approved: (cb: (t: CdvTransaction) => void) => unknown }
-  order: (offer: CdvOffer) => Promise<CdvError | undefined>
-  off: (cb: (t: CdvTransaction) => void) => void
-}
-
-type CdvProduct = { getOffer: () => CdvOffer | undefined }
-type CdvOffer = object
-type CdvTransaction = {
-  products?: { id: string }[]
-  parentReceipt?: { purchaseToken?: string; receipt?: unknown; signature?: unknown }
-  finish: () => Promise<void>
-}
-type CdvError = { isError: true; code: number; message: string } | undefined
-
 function isAndroidNative(): boolean {
   if (typeof window === "undefined") return false
-  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android"
+  return Platform.OS === "android"
 }
 
 const GOOGLE_PURCHASE_TOKEN_CACHE_KEY = "bk_gp_purchase_tokens_v1"
@@ -126,7 +92,7 @@ export async function buyVIP(accessToken: string | null | undefined): Promise<vo
     window.location.href = monthly
     return
   }
-  await purchaseAndroidSubscription(GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID, accessToken)
+  await purchaseAndroidSubscriptionWithReactNativeIap(GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID, accessToken)
 }
 
 /** Abonnement VIP+ mensuel : Google Play sur Android ; Stripe sur le Web (si configuré). */
@@ -139,7 +105,7 @@ export async function buyVIPPlus(accessToken: string | null | undefined): Promis
     window.location.href = vipPlus
     return
   }
-  await purchaseAndroidSubscription(GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID, accessToken)
+  await purchaseAndroidSubscriptionWithReactNativeIap(GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID, accessToken)
 }
 
 export class PaymentService {
@@ -155,49 +121,35 @@ export class PaymentService {
     }
     if (!isAndroidNative()) return fallback
     try {
-      const { store, cdv } = await getStoreSafe()
-      const { ProductType, Platform } = cdv
-      const ids = [
+      const iap = await getIapSafe()
+      const skus = [
         GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID,
         GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
         GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
       ].filter(Boolean)
 
-      for (const id of ids) {
-        store.register({ id, type: ProductType.PAID_SUBSCRIPTION, platform: Platform.GOOGLE_PLAY })
-      }
+      await iap.initConnection()
       try {
-        await store.initialize([Platform.GOOGLE_PLAY])
-        await store.update()
-      } catch (e) {
-        console.error("[IAP] store init/update failed (price labels)", e)
-        throw e
-      }
-
-      const getPretty = (id: string): string | null => {
-        const product = store.get(id, Platform.GOOGLE_PLAY) as any
-        if (!product) {
-          console.warn("[IAP] product missing after update (price labels)", { id })
+        const subs = await iap.getSubscriptions({ skus })
+        const pick = (sku: string): string | null => {
+          const p = subs.find((x: any) => x?.productId === sku)
+          const pretty =
+            (typeof (p as any)?.localizedPrice === "string" && (p as any).localizedPrice) ||
+            (typeof (p as any)?.price === "string" && (p as any).price) ||
+            null
+          return pretty
         }
-        if (!product) return null
-        const direct =
-          (typeof product?.price === "string" && product.price) ||
-          (typeof product?.pricing === "string" && product.pricing) ||
-          (typeof product?.pricing?.price === "string" && product.pricing.price) ||
-          null
-        if (direct) return direct
-        const offer = (product.getOffer?.() as any) || null
-        const offerPrice =
-          (typeof offer?.pricingPhases?.[0]?.price === "string" && offer.pricingPhases[0].price) ||
-          (typeof offer?.pricingPhases?.[0]?.formattedPrice === "string" && offer.pricingPhases[0].formattedPrice) ||
-          null
-        return offerPrice
-      }
-
-      return {
-        weekly: getPretty(GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID) || fallback.weekly,
-        monthly: getPretty(GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID) || fallback.monthly,
-        vipPlusMonthly: getPretty(GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID) || fallback.vipPlusMonthly,
+        return {
+          weekly: pick(GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID) || fallback.weekly,
+          monthly: pick(GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID) || fallback.monthly,
+          vipPlusMonthly: pick(GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID) || fallback.vipPlusMonthly,
+        }
+      } finally {
+        try {
+          await iap.endConnection()
+        } catch {
+          // ignore
+        }
       }
     } catch (e) {
       if (process.env.NODE_ENV !== "production") {
@@ -242,15 +194,13 @@ export class PaymentService {
     const { plan, accessToken } = params
 
     if (isAndroidNative()) {
-      if (plan === "vip_plus_monthly") {
-        await buyVIPPlus(accessToken)
-        return
-      }
-      if (plan === "monthly") {
-        await buyVIP(accessToken)
-        return
-      }
-      await purchaseAndroidSubscription(GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID, accessToken)
+      const productId =
+        plan === "vip_plus_monthly"
+          ? GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID
+          : plan === "monthly"
+            ? GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID
+            : GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID
+      await purchaseAndroidSubscriptionWithReactNativeIap(productId, accessToken)
       return
     }
 
@@ -264,36 +214,18 @@ export class PaymentService {
   }
 }
 
-async function loadCordovaPurchase(): Promise<void> {
-  if (typeof window === "undefined") return
-  await import("cordova-plugin-purchase")
-}
+type IapModule = typeof import("react-native-iap")
 
-async function getStore(): Promise<{ store: CdvStore; cdv: NonNullable<CdvWindow["CdvPurchase"]> }> {
-  await loadCordovaPurchase()
-  await waitForNativePurchaseBridge()
-  const cdv = (window as CdvWindow).CdvPurchase
-  if (!cdv?.store) {
-    throw new Error("Magasin intégré indisponible (plugin IAP non chargé — lancez `npx cap sync android`).")
-  }
-  return { store: cdv.store, cdv }
-}
-
-/** Comme `getStore` mais ne propage pas d’erreur technique brute (évite crash UI si Billing lent ou plugin absent). */
-async function getStoreSafe(): Promise<{ store: CdvStore; cdv: NonNullable<CdvWindow["CdvPurchase"]> }> {
+async function getIapSafe(): Promise<IapModule> {
   try {
-    return await getStore()
+    return (await import("react-native-iap")) as IapModule
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(
-      msg.includes("IAP") || msg.includes("plugin")
-        ? "Magasin Google Play indisponible. Vérifie l’installation (sync Capacitor) ou réessaie plus tard."
-        : "Magasin intégré momentanément indisponible. Réessaie plus tard.",
-    )
+    console.error("[IAP] react-native-iap import failed", e)
+    throw new Error("Paiement Google Play indisponible sur cet environnement.")
   }
 }
 
-async function purchaseAndroidSubscription(
+async function purchaseAndroidSubscriptionWithReactNativeIap(
   productId: string,
   accessToken: string | null | undefined,
 ): Promise<void> {
@@ -302,134 +234,91 @@ async function purchaseAndroidSubscription(
       throw new Error("Session requise pour valider l’achat sur le serveur.")
     }
 
-    const { store, cdv } = await getStoreSafe()
-    const { ProductType, Platform, ErrorCode } = cdv
+    const iap = await getIapSafe()
+    await iap.initConnection()
 
-    store.register({
-      id: productId,
-      type: ProductType.PAID_SUBSCRIPTION,
-      platform: Platform.GOOGLE_PLAY,
-    })
+    let subUpdate: { remove: () => void } | null = null
+    let subError: { remove: () => void } | null = null
+
     try {
-      await store.initialize([Platform.GOOGLE_PLAY])
-      await store.update()
-      console.log("[IAP] store initialized/updated", { productId })
-    } catch (e) {
-      console.error("[IAP] store init/update failed", {
-        productId,
-        error: e instanceof Error ? e.message : String(e),
-        raw: e,
-      })
-      throw e
-    }
+      const purchaseToken = await new Promise<string>((resolve, reject) => {
+        let settled = false
 
-    const product = store.get(productId, Platform.GOOGLE_PLAY)
-    if (!product) {
-      console.warn("[IAP] product not found — store list empty or ERR_LOAD?", { productId })
-      throw new Error(
-        `Produit Google Play « ${productId} » introuvable (en attente côté Play Console ou ID incorrect).`,
-      )
-    }
-    const offer = product.getOffer()
-    if (!offer) {
-      throw new Error("Aucune offre disponible pour ce produit.")
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      let settled = false
-
-      const done = (fn: () => void) => {
-        if (settled) return
-        settled = true
-        try {
-          store.off(approvedHandler)
-        } catch {
-          /* ignore */
+        const done = (fn: () => void) => {
+          if (settled) return
+          settled = true
+          try {
+            subUpdate?.remove()
+          } catch {
+            // ignore
+          }
+          try {
+            subError?.remove()
+          } catch {
+            // ignore
+          }
+          fn()
         }
-        fn()
-      }
 
-      const approvedHandler = async (transaction: CdvTransaction) => {
-        const pid = transaction.products?.[0]?.id
-        if (pid !== productId) return
-
-        try {
-          const signedDataRaw =
-            (transaction as unknown as { parentReceipt?: { receipt?: unknown; purchaseData?: unknown } }).parentReceipt
-              ?.receipt ??
-            (transaction as unknown as { parentReceipt?: { receipt?: unknown; purchaseData?: unknown } }).parentReceipt
-              ?.purchaseData ??
-            (transaction as unknown as { receipt?: unknown }).receipt ??
-            null
-          const signatureRaw =
-            (transaction as unknown as { parentReceipt?: { signature?: unknown } }).parentReceipt?.signature ??
-            (transaction as unknown as { signature?: unknown }).signature ??
-            null
-
-          if (typeof signedDataRaw === "string" && typeof signatureRaw === "string") {
-            try {
-              const res = await verifyGooglePlayReceiptSignature({
-                signedData: signedDataRaw,
-                signatureBase64: signatureRaw,
-                publicKeyBase64: GOOGLE_PLAY_RSA_PUBLIC_KEY_BASE64,
-              })
-              console.log("[gp-receipt] verification signature", {
-                ok: res.ok,
-                algorithm: res.algorithm,
-                error: res.error,
-                productId,
-              })
-            } catch (e) {
-              console.warn("[gp-receipt] verification exception", e)
-            }
-          } else {
-            console.log("[gp-receipt] signature/receipt non fournis par le plugin (skip)", {
-              hasSignedData: typeof signedDataRaw === "string",
-              hasSignature: typeof signatureRaw === "string",
-              productId,
-            })
-          }
-
-          const purchaseToken = transaction.parentReceipt?.purchaseToken
-          if (!purchaseToken) {
-            throw new Error("Jeton d’achat Google manquant.")
-          }
-          writeCachedGooglePurchaseToken(productId, purchaseToken)
-
-          const supabase = createClient()
-          const { data: fnRes, error: fnErr } = await supabase.functions.invoke("verify-google-purchase", {
-            body: {
-              packageName: ANDROID_PACKAGE_NAME,
-              productId,
-              purchaseToken,
-            },
-          })
-          if (fnErr) {
-            throw new Error(fnErr.message || "Échec de la validation serveur.")
-          }
-          if (!fnRes || (fnRes as { ok?: boolean; error?: string }).ok !== true) {
-            const errMsg = (fnRes as { error?: string } | null)?.error || "Échec de la validation serveur."
-            throw new Error(errMsg)
-          }
-          await transaction.finish()
-          done(() => resolve())
-        } catch (e) {
-          done(() => reject(e instanceof Error ? e : new Error(String(e))))
-        }
-      }
-
-      store.when().approved(approvedHandler)
-
-      void store.order(offer).then((err: CdvError) => {
-        if (err?.isError) {
-          if (err.code === ErrorCode.PAYMENT_CANCELLED) {
+        subError = iap.purchaseErrorListener((err: any) => {
+          const code = String(err?.code || "")
+          const msg = String(err?.message || "")
+          if (code.toLowerCase().includes("cancel") || msg.toLowerCase().includes("cancel")) {
             done(() => reject(new Error("Achat annulé.")))
-          } else {
-            done(() => reject(new Error(err.message || "Erreur magasin")))
+            return
           }
-        }
+          done(() => reject(new Error("Erreur Google Play Billing. Réessaie plus tard.")))
+        })
+
+        subUpdate = iap.purchaseUpdatedListener(async (purchase: any) => {
+          try {
+            const token = typeof purchase?.purchaseToken === "string" ? purchase.purchaseToken : ""
+            const pid = typeof purchase?.productId === "string" ? purchase.productId : ""
+            if (!token || pid !== productId) return
+
+            writeCachedGooglePurchaseToken(productId, token)
+
+            const supabase = createClient()
+            const { data: fnRes, error: fnErr } = await supabase.functions.invoke("verify-google-purchase", {
+              body: {
+                packageName: ANDROID_PACKAGE_NAME,
+                productId,
+                purchaseToken: token,
+              },
+            })
+            if (fnErr) throw new Error(fnErr.message || "Échec de la validation serveur.")
+            if (!fnRes || (fnRes as { ok?: boolean; error?: string }).ok !== true) {
+              const errMsg = (fnRes as { error?: string } | null)?.error || "Échec de la validation serveur."
+              throw new Error(errMsg)
+            }
+
+            await iap.finishTransaction({ purchase, isConsumable: false })
+            done(() => resolve(token))
+          } catch (e) {
+            done(() => reject(e instanceof Error ? e : new Error(String(e))))
+          }
+        })
+
+        void iap
+          .requestSubscription({
+            sku: productId,
+          } as any)
+          .catch((e: any) => {
+            const msg = e instanceof Error ? e.message : String(e)
+            done(() => reject(new Error(msg || "Impossible de lancer l’achat.")))
+          })
       })
-    })
+
+      if (!purchaseToken) {
+        throw new Error("Jeton d’achat Google manquant.")
+      }
+    } finally {
+      try {
+        await iap.endConnection()
+      } catch {
+        // ignore
+      }
+    }
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e)
     if (raw.includes("introuvable") || raw.includes("Produit Google Play")) {
@@ -437,7 +326,7 @@ async function purchaseAndroidSubscription(
         "Abonnement indisponible pour le moment (produit en cours de validation sur Google Play). Réessaie plus tard.",
       )
     }
-    if (raw.includes("Magasin") || raw.includes("plugin") || raw.includes("IAP")) {
+    if (raw.includes("Google Play") || raw.includes("Billing") || raw.includes("IAP")) {
       throw new Error(raw)
     }
     throw new Error("Impossible de finaliser l’achat pour le moment. Réessaie plus tard.")

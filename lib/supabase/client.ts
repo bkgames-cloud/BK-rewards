@@ -3,17 +3,15 @@ import { createBrowserClient } from "@supabase/ssr"
 let client: ReturnType<typeof createBrowserClient> | null = null
 
 /** Realtime (WebSockets) — désactivé par défaut (évite “Connection lost” sur mobile). */
-export const ENABLE_SUPABASE_REALTIME = process.env.NEXT_PUBLIC_ENABLE_SUPABASE_REALTIME === "true"
+export const ENABLE_SUPABASE_REALTIME =
+  typeof process !== "undefined" ? process.env.NEXT_PUBLIC_ENABLE_SUPABASE_REALTIME === "true" : false
 
 function getSupabasePublicConfig(): { url: string; anonKey: string } {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (typeof window !== "undefined" && (!url || !anonKey)) {
-    console.error(
-      "[supabase] Variables manquantes : définir NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY (build / .env) pour que le client fonctionne sur Web et Android.",
-    )
+  return {
+    url: "https://zfoamfyyllmjxmiwcyzr.supabase.co",
+    anonKey:
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpmb2FtZnl5bGxtanhtaXdjeXpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgxMjMzMjUsImV4cCI6MjA4MzY5OTMyNX0.CsOTU_NU4drP3xNUI__rodveTa1iHQwOHUXoyBJ8VuQ",
   }
-  return { url: url ?? "", anonKey: anonKey ?? "" }
 }
 
 export function createClient() {

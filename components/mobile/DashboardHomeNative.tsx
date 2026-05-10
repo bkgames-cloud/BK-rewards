@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/client"
 import { OFFERS_ENABLED } from "@/lib/offerwall-ui"
 import { OffersWebViewNative } from "@/components/mobile/OffersWebViewNative"
 import { LegalNoticesNative } from "@/components/mobile/LegalNoticesNative"
+import { fetchAuthProfileForUser } from "@/lib/fetch-auth-profile"
 
 /**
  * Reproduction native du dashboard web (`DashboardClient` + home) : mêmes tons sombres, or, cartes sky/violet,
@@ -34,6 +35,10 @@ export function DashboardHomeNative() {
   const [screen, setScreen] = useState<"home" | "offers" | "legal">("home")
   const [userId, setUserId] = useState<string | null>(null)
 
+  useEffect(() => {
+    console.log("[bkg] Composant Dashboard monté")
+  }, [])
+
   const loadPlaceholder = useCallback(async () => {
     setLoading(true)
     await new Promise((r) => setTimeout(r, 350))
@@ -49,14 +54,26 @@ export function DashboardHomeNative() {
   useEffect(() => {
     const loadUser = async () => {
       try {
+        setLoading(true)
         const supabase = createClient()
         const {
           data: { user },
         } = await supabase.auth.getUser()
         setUserId(user?.id ?? null)
+
+        if (user?.id) {
+          const { data: profileRow } = await fetchAuthProfileForUser(supabase, user.id)
+          const raw = (profileRow as { points?: unknown; points_balance?: unknown } | null) ?? null
+          const p = Number(raw?.points_balance ?? raw?.points ?? 0)
+          setPoints(Number.isFinite(p) ? Math.max(0, Math.floor(p)) : 0)
+        } else {
+          setPoints(0)
+        }
       } catch {
         setUserId(null)
+        setPoints(0)
       }
+      setLoading(false)
     }
     void loadUser()
   }, [])

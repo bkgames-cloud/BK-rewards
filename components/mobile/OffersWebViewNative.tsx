@@ -41,8 +41,8 @@ export function OffersWebViewNative(props: { userId: string | null; onClose: () 
   const [tab, setTab] = useState<"lootably" | "revlum">("lootably")
   const [loading, setLoading] = useState(true)
 
-  const lootablyBase = String(process.env.NEXT_PUBLIC_LOOTABLY_URL || "").trim()
-  const revlumBase = String(process.env.NEXT_PUBLIC_REVLUM_URL || "").trim()
+  const lootablyBase = String(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_LOOTABLY_URL || "" : "").trim()
+  const revlumBase = String(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_REVLUM_URL || "" : "").trim()
 
   const canOpen = Boolean(props.userId && (lootablyBase || revlumBase))
 
