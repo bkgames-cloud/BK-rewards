@@ -4,10 +4,10 @@ import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { SeasonTimer } from "@/components/season-timer"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/client"
 import type { Profile, Season } from "@/lib/types"
-import { Trophy, Sparkles, Crown, Copy, Play, Target } from "lucide-react"
+import { Trophy, Sparkles, Crown, Copy, Play, Target, CreditCard } from "lucide-react"
 import { soundService } from "@/lib/sounds"
 import { AnimatedCounter } from "@/components/animated-counter"
 import { Confetti } from "@/components/confetti"
@@ -28,6 +28,23 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { countVideoViewsLastHour, isHourlyVideoQuotaExceeded } from "@/lib/video-quota"
 import { OFFERS_ENABLED } from "@/lib/offerwall-ui"
+import { PaymentService, buyVIP, buyVIPPlus } from "@/lib/payment-service"
+import {
+  GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_PLUS_WEEKLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID,
+} from "@/lib/payment-constants"
+
+/** Poste vers le shell React Native (`App.js` attend `purchase:<sku>` sur `onMessage`). */
+function notifyReactNativeBilling(sku: string): boolean {
+  if (typeof window === "undefined") return false
+  const post = (window as unknown as { ReactNativeWebView?: { postMessage: (msg: string) => void } })
+    .ReactNativeWebView?.postMessage
+  if (typeof post !== "function") return false
+  post(`purchase:${sku}`)
+  return true
+}
 
 /** Offres : écran interne côté app, route interne côté web. */
 
@@ -445,6 +462,62 @@ export function DashboardClient({
   const [statusType, setStatusType] = useState<"success" | "error" | null>(null)
   const router = useRouter()
 
+  const stripeWeeklyUrl = process.env.NEXT_PUBLIC_STRIPE_WEEKLY_LINK ?? ""
+  const stripeMonthlyUrl = process.env.NEXT_PUBLIC_STRIPE_MONTHLY_LINK ?? ""
+
+  const openStripeCheckout = useCallback(
+    (url: string | undefined | null, label: string) => {
+      const u = (url ?? "").trim()
+      if (!u) {
+        toast({
+          title: "Paiement indisponible",
+          description: `Lien Stripe ${label} manquant (NEXT_PUBLIC_STRIPE_*).`,
+          variant: "destructive",
+        })
+        return
+      }
+      window.location.href = u
+    },
+    [toast],
+  )
+
+  type AndroidSku =
+    | typeof GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID
+    | typeof GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID
+    | typeof GOOGLE_PLAY_VIP_PLUS_WEEKLY_PRODUCT_ID
+    | typeof GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID
+
+  const startGooglePlaySubscription = useCallback(
+    async (sku: AndroidSku, plan: Parameters<typeof buyVIP>[1] | Parameters<typeof buyVIPPlus>[1], tier: "vip" | "plus") => {
+      if (!PaymentService.isAndroidNative()) return
+      if (notifyReactNativeBilling(sku)) {
+        toast({ title: "Google Play", description: "Ouverture du paiement sécurisé…" })
+        return
+      }
+      try {
+        const supabase = createClient()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        const token = session?.access_token
+        if (tier === "plus") {
+          await buyVIPPlus(token, plan)
+        } else {
+          await buyVIP(token, plan)
+        }
+        toast({ title: "Merci !", description: "Abonnement pris en compte." })
+        router.refresh()
+      } catch (e) {
+        toast({
+          title: "Erreur",
+          description: e instanceof Error ? e.message : "Impossible de lancer l’achat.",
+          variant: "destructive",
+        })
+      }
+    },
+    [router, toast],
+  )
+
   useEffect(() => {
     return () => {
       if (simulationTimeoutRef.current) {
@@ -821,6 +894,113 @@ export function DashboardClient({
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Paiement / abonnement : Google Play Billing (Android) ou liens Stripe (navigateur) */}
+      {showWallet && isAuthenticated && (
+        <Card className="border border-amber-500/35 bg-gradient-to-br from-amber-950/35 via-[#1a1a1a] to-[#121212] shadow-lg">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-lg text-foreground">
+              <CreditCard className="h-5 w-5 text-amber-400" />
+              Paiement / Abonnement
+            </CardTitle>
+            {PaymentService.isAndroidNative() ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Abonnements via Google&nbsp;Play (Billing + cordova-plugin-purchase)&nbsp;:{" "}
+                  {GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID}, {GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID},{" "}
+                  {GOOGLE_PLAY_VIP_PLUS_WEEKLY_PRODUCT_ID}, {GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID}.
+                </p>
+                <p className="text-[11px] text-muted-foreground/80 mt-1">
+                  Les avantages sont les mêmes que le Pass Confort sur le Web.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Abonnements VIP sécurisés par carte via Stripe depuis ce navigateur.
+                </p>
+                <p className="text-[11px] text-muted-foreground/80 mt-1">
+                  Hebdomadaire ou mensuel — vous serez redirigé vers la page de paiement.
+                </p>
+              </>
+            )}
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 pt-0">
+            {PaymentService.isAndroidNative() ? (
+              <>
+                <Button
+                  type="button"
+                  className="w-full border border-yellow-600/50 bg-yellow-950/30 text-yellow-100 hover:bg-yellow-900/35"
+                  variant="outline"
+                  onClick={() =>
+                    void startGooglePlaySubscription(GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID, "weekly", "vip")
+                  }
+                >
+                  VIP BKG (Hebdo) — Google Play
+                </Button>
+                <Button
+                  type="button"
+                  className="w-full border border-amber-600/55 bg-amber-950/25 text-amber-50 hover:bg-amber-900/35"
+                  variant="outline"
+                  onClick={() =>
+                    void startGooglePlaySubscription(GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID, "monthly", "vip")
+                  }
+                >
+                  VIP BKG (Mensuel) — Google Play
+                </Button>
+                <Button
+                  type="button"
+                  className="w-full border border-slate-500/45 bg-slate-900/40 text-slate-100 hover:bg-slate-800/45"
+                  variant="outline"
+                  onClick={() =>
+                    void startGooglePlaySubscription(
+                      GOOGLE_PLAY_VIP_PLUS_WEEKLY_PRODUCT_ID,
+                      "weekly",
+                      "plus",
+                    )
+                  }
+                >
+                  VIP+ BKG (Hebdo) — Google Play
+                </Button>
+                <Button
+                  type="button"
+                  className="w-full border border-slate-400/50 bg-slate-800/30 text-slate-50 hover:bg-slate-700/35"
+                  variant="outline"
+                  onClick={() =>
+                    void startGooglePlaySubscription(
+                      GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
+                      "monthly",
+                      "plus",
+                    )
+                  }
+                >
+                  VIP+ BKG (Mensuel) — Google Play
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 font-semibold text-black hover:from-yellow-400 hover:to-amber-400"
+                  onClick={() => openStripeCheckout(stripeWeeklyUrl, "hebdomadaire")}
+                  disabled={!stripeWeeklyUrl}
+                >
+                  VIP hebdomadaire — paiement carte (Stripe)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full border-amber-500/50 font-semibold text-amber-100 hover:bg-amber-950/40"
+                  onClick={() => openStripeCheckout(stripeMonthlyUrl, "mensuel")}
+                  disabled={!stripeMonthlyUrl}
+                >
+                  VIP mensuel — paiement carte (Stripe)
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <Dialog open={offersSoonOpen} onOpenChange={setOffersSoonOpen}>

@@ -12,7 +12,13 @@ import { useToast } from "@/hooks/use-toast"
 import { notificationService } from "@/lib/notifications"
 import { soundService } from "@/lib/sounds"
 import { Confetti } from "@/components/confetti"
-import { PaymentService } from "@/lib/payment-service"
+import { PaymentService, buyVIP, buyVIPPlus } from "@/lib/payment-service"
+import {
+  GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_PLUS_WEEKLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID,
+} from "@/lib/payment-constants"
 import { getApiUrl } from "@/lib/api-origin"
 import { fetchInternalTestVipBonusEnabled } from "@/lib/app-settings-flags"
 
@@ -31,6 +37,13 @@ export default function PremiumPage() {
   const searchParams = useSearchParams()
   const { toast } = useToast()
   const debugVip = (searchParams?.get("debugVip") || "").trim() === "1"
+  const [androidPricesLoading, setAndroidPricesLoading] = useState(false)
+  const [androidPrices, setAndroidPrices] = useState<{
+    weekly: string
+    monthly: string
+    vipPlusWeekly: string
+    vipPlusMonthly: string
+  } | null>(null)
 
   useEffect(() => {
     async function checkVipStatus() {
@@ -105,6 +118,28 @@ export default function PremiumPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    if (!PaymentService.isAndroidNative()) return
+    let cancelled = false
+    const load = async () => {
+      setAndroidPricesLoading(true)
+      try {
+        const labels = await PaymentService.getAndroidPriceLabels()
+        if (!cancelled) setAndroidPrices(labels)
+      } catch {
+        if (!cancelled) setAndroidPrices(null)
+      } finally {
+        if (!cancelled) setAndroidPricesLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const billingViaGooglePlay = PaymentService.isAndroidNative()
+
   const handleSubscribe = async (type: "weekly" | "monthly") => {
     try {
       if (notificationService.isSupported() && !notificationService.hasPermission()) {
@@ -131,10 +166,11 @@ export default function PremiumPage() {
       } = await supabase.auth.getSession()
       const accessToken = session?.access_token
 
-      await PaymentService.subscribe({
-        plan: type,
-        accessToken,
-      })
+      if (billingViaGooglePlay) {
+        await buyVIP(accessToken, type)
+      } else {
+        await PaymentService.subscribe({ plan: type, accessToken })
+      }
 
       if (PaymentService.isAndroidNative()) {
         toast({
@@ -145,10 +181,60 @@ export default function PremiumPage() {
       }
     } catch (error) {
       console.error("Unexpected error:", error)
-      const msg = error instanceof Error ? error.message : "Une erreur est survenue lors de l'abonnement."
       toast({
         title: "Erreur",
-        description: msg,
+        description:
+          error instanceof Error ? error.message : "Une erreur est survenue lors de l'abonnement.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleSubscribeVipPlus = async (period: "weekly" | "monthly") => {
+    try {
+      if (notificationService.isSupported() && !notificationService.hasPermission()) {
+        await notificationService.requestPermission()
+      }
+
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        toast({
+          title: "Erreur",
+          description: "Vous devez être connecté pour vous abonner.",
+          variant: "destructive",
+        })
+        router.push("/auth/login")
+        return
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (billingViaGooglePlay) {
+        await buyVIPPlus(accessToken, period)
+      } else if (period === "weekly") {
+        await PaymentService.subscribe({ plan: "vip_plus_weekly", accessToken })
+      } else {
+        await PaymentService.subscribe({ plan: "vip_plus_monthly", accessToken })
+      }
+
+      toast({
+        title: "Merci !",
+        description: "Votre abonnement VIP+ a été pris en compte.",
+      })
+      router.refresh()
+    } catch (error) {
+      console.error("[premium] VIP+ subscribe:", error)
+      toast({
+        title: "Erreur",
+        description:
+          error instanceof Error ? error.message : "Une erreur est survenue lors de l'abonnement VIP+.",
         variant: "destructive",
       })
     }
@@ -193,11 +279,6 @@ export default function PremiumPage() {
 
   const handleOpenPortal = async () => {
     if (PaymentService.isAndroidNative()) {
-      toast({
-        title: "Indisponible",
-        description: "Gestion abonnement : disponible uniquement sur le Web (Stripe).",
-        variant: "destructive",
-      })
       return
     }
     try {
@@ -402,7 +483,7 @@ export default function PremiumPage() {
                 </div>
               )}
             </div>
-            {isVip && (
+            {isVip && !billingViaGooglePlay ? (
               <Button
                 onClick={() => void handleOpenPortal()}
                 variant="outline"
@@ -411,12 +492,188 @@ export default function PremiumPage() {
                 <Crown className="mr-2 h-4 w-4" />
                 Gérer mon abonnement
               </Button>
-            )}
+            ) : isVip && billingViaGooglePlay ? (
+              <p className="text-xs text-muted-foreground text-center px-2">
+                Abonnement et facturation gérés dans l&apos;application Google&nbsp;Play (Paramètres &gt;
+                Abonnements).
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       )}
 
-      {isAuthenticated && !isVip && (
+      {isAuthenticated && !isVip && billingViaGooglePlay ? (
+        androidPricesLoading ? (
+          <Card className="border border-border/50 bg-[#1a1a1a]/80 backdrop-blur-sm shadow-lg">
+            <CardHeader>
+              <CardTitle className="text-foreground">Offres Google Play</CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Chargement des abonnements (Google Play Billing)…
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card className="border border-border/50 bg-[#1a1a1a]/80 backdrop-blur-sm shadow-lg">
+              <CardHeader>
+                <CardTitle className="text-foreground">VIP — Hebdomadaire</CardTitle>
+                <div className="mt-2 space-y-1">
+                  <div>
+                    <span className="text-3xl font-bold text-foreground">
+                      {androidPrices?.weekly ?? "1,99€"}
+                    </span>
+                    <span className="text-muted-foreground"> / semaine</span>
+                  </div>
+                  <CardDescription className="text-muted-foreground text-xs">
+                    Produit&nbsp;:{" "}
+                    <span className="font-mono text-foreground/80">{GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID}</span>
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ul className="space-y-2">
+                  <li className="flex items-center gap-2 text-sm text-foreground">
+                    <Check className="h-4 w-4 text-green-500" />
+                    Zéro publicité · Bonus quotidien
+                  </li>
+                  <li className="flex items-center gap-2 text-sm text-foreground">
+                    <Check className="h-4 w-4 text-green-500" />
+                    Paiement via Google Play
+                  </li>
+                </ul>
+                <Button
+                  className="w-full bg-gradient-to-r from-accent to-accent/80 text-accent-foreground hover:bg-accent/90"
+                  onClick={() => void handleSubscribe("weekly")}
+                >
+                  S&apos;abonner
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="border-2 border-accent bg-[#1a1a1a]/80 backdrop-blur-sm shadow-lg relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <Badge className="bg-accent text-accent-foreground">Recommandé</Badge>
+              </div>
+              <CardHeader>
+                <CardTitle className="text-foreground">VIP — Mensuel</CardTitle>
+                <div className="mt-2 space-y-1">
+                  <div>
+                    <span className="text-3xl font-bold text-foreground">
+                      {androidPrices?.monthly ?? "4,99€"}
+                    </span>
+                    <span className="text-muted-foreground"> / mois</span>
+                  </div>
+                  <CardDescription className="text-muted-foreground text-xs">
+                    Produit&nbsp;:{" "}
+                    <span className="font-mono text-foreground/80">{GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID}</span>
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ul className="space-y-2">
+                  <li className="flex items-center gap-2 text-sm text-foreground">
+                    <Check className="h-4 w-4 text-green-500" />
+                    Zéro publicité · Bonus quotidien
+                  </li>
+                  <li className="flex items-center gap-2 text-sm text-foreground">
+                    <Check className="h-4 w-4 text-green-500" />
+                    Paiement via Google Play
+                  </li>
+                </ul>
+                <Button
+                  className="w-full bg-gradient-to-r from-accent to-accent/80 text-accent-foreground hover:bg-accent/90"
+                  onClick={() => {
+                    soundService.playClickSound()
+                    void handleSubscribe("monthly")
+                  }}
+                >
+                  S&apos;abonner
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="border border-slate-400/40 bg-[#1a1a1a]/80 backdrop-blur-sm shadow-lg">
+              <CardHeader>
+                <CardTitle className="text-foreground">VIP+ — Hebdomadaire</CardTitle>
+                <div className="mt-2 space-y-1">
+                  <div>
+                    <span className="text-3xl font-bold text-foreground">
+                      {androidPrices?.vipPlusWeekly ?? "—"}
+                    </span>
+                    <span className="text-muted-foreground"> / semaine</span>
+                  </div>
+                  <CardDescription className="text-muted-foreground text-xs">
+                    Produit&nbsp;:{" "}
+                    <span className="font-mono text-foreground/80">{GOOGLE_PLAY_VIP_PLUS_WEEKLY_PRODUCT_ID}</span>
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ul className="space-y-2">
+                  <li className="flex items-center gap-2 text-sm text-foreground">
+                    <Check className="h-4 w-4 text-green-500" />
+                    Tous les avantages VIP · Machine exclusive
+                  </li>
+                  <li className="flex items-center gap-2 text-sm text-foreground">
+                    <Check className="h-4 w-4 text-green-500" />
+                    Paiement via Google Play
+                  </li>
+                </ul>
+                <Button
+                  className="w-full bg-gradient-to-r from-slate-200 to-slate-400 text-slate-900 hover:from-slate-100 hover:to-slate-300"
+                  onClick={() => {
+                    soundService.playClickSound()
+                    void handleSubscribeVipPlus("weekly")
+                  }}
+                >
+                  S&apos;abonner VIP+ (semaine)
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="border border-slate-400/40 bg-[#1a1a1a]/80 backdrop-blur-sm shadow-lg">
+              <CardHeader>
+                <CardTitle className="text-foreground">VIP+ — Mensuel</CardTitle>
+                <div className="mt-2 space-y-1">
+                  <div>
+                    <span className="text-3xl font-bold text-foreground">
+                      {androidPrices?.vipPlusMonthly ?? "7,99€"}
+                    </span>
+                    <span className="text-muted-foreground"> / mois</span>
+                  </div>
+                  <CardDescription className="text-muted-foreground text-xs">
+                    Produit&nbsp;:{" "}
+                    <span className="font-mono text-foreground/80">{GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID}</span>
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <ul className="space-y-2">
+                  <li className="flex items-center gap-2 text-sm text-foreground">
+                    <Check className="h-4 w-4 text-green-500" />
+                    Tous les avantages VIP · Machine exclusive
+                  </li>
+                  <li className="flex items-center gap-2 text-sm text-foreground">
+                    <Check className="h-4 w-4 text-green-500" />
+                    Paiement via Google Play
+                  </li>
+                </ul>
+                <Button
+                  className="w-full bg-gradient-to-r from-slate-200 to-slate-400 text-slate-900 hover:from-slate-100 hover:to-slate-300"
+                  onClick={() => {
+                    soundService.playClickSound()
+                    void handleSubscribeVipPlus("monthly")
+                  }}
+                >
+                  S&apos;abonner VIP+ (mois)
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )
+      ) : null}
+
+      {isAuthenticated && !isVip && !billingViaGooglePlay ? (
         <div className="grid gap-4 md:grid-cols-2">
           <Card className="border border-border/50 bg-[#1a1a1a]/80 backdrop-blur-sm shadow-lg">
             <CardHeader>
@@ -489,7 +746,7 @@ export default function PremiumPage() {
             </CardContent>
           </Card>
         </div>
-      )}
+      ) : null}
 
       <Card className="border border-border/50 bg-[#1a1a1a]/80 backdrop-blur-sm shadow-lg">
         <CardHeader>

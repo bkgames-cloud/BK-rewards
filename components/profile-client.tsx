@@ -16,7 +16,13 @@ import { Confetti } from "@/components/confetti"
 import { emailMatchesAdmin } from "@/lib/admin-config"
 import { gradeToFlags, normalizeGrade } from "@/lib/grade"
 import { getApiUrl } from "@/lib/api-origin"
-import { PaymentService } from "@/lib/payment-service"
+import { PaymentService, buyVIP, buyVIPPlus } from "@/lib/payment-service"
+import {
+  GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_PLUS_WEEKLY_PRODUCT_ID,
+  GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID,
+} from "@/lib/payment-constants"
 import { fetchInternalTestVipBonusEnabled } from "@/lib/app-settings-flags"
 import { updateUserPoints } from "@/lib/update-user-points"
 import {
@@ -55,9 +61,11 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [subscriptionMessage, setSubscriptionMessage] = useState<string | null>(null)
+  const [androidPricesLoading, setAndroidPricesLoading] = useState(false)
   const [androidPrices, setAndroidPrices] = useState<{
     weekly: string
     monthly: string
+    vipPlusWeekly: string
     vipPlusMonthly: string
   } | null>(null)
   const router = useRouter()
@@ -88,6 +96,8 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
   useEffect(() => {
     setLocalPoints(profile?.points ?? 0)
   }, [profile?.points])
+
+  const stripeVipPlusWeeklyConfigured = Boolean(process.env.NEXT_PUBLIC_STRIPE_VIP_PLUS_WEEKLY_LINK?.trim())
 
   const normalizedGrade = normalizeGrade(profile?.grade)
   const flagsFromGrade = gradeToFlags(normalizedGrade)
@@ -143,11 +153,14 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     if (!PaymentService.isAndroidNative()) return
     let cancelled = false
     const run = async () => {
+      setAndroidPricesLoading(true)
       try {
         const labels = await PaymentService.getAndroidPriceLabels()
         if (!cancelled) setAndroidPrices(labels)
       } catch {
         if (!cancelled) setAndroidPrices(null)
+      } finally {
+        if (!cancelled) setAndroidPricesLoading(false)
       }
     }
     void run()
@@ -411,50 +424,49 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     }
   }
 
-  // 5. Abonnement : Google Play Billing sur Android natif, Stripe sur le Web.
-  const handleCheckout = async (plan: string) => {
+  // 5. Abonnement : Google Play (cordova-plugin-purchase) sur Android natif, Stripe sur le Web.
+  type CheckoutPlan =
+    | "weekly"
+    | "monthly"
+    | "vip_plus_weekly"
+    | "vip_plus_monthly"
+
+  const handleCheckout = async (plan: CheckoutPlan) => {
+    const billingViaGooglePlay = PaymentService.isAndroidNative()
     setSubscriptionMessage(null)
-    if (plan === "vip_plus") {
-      try {
-        const supabase = createClient()
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        await PaymentService.subscribe({
-          plan: "vip_plus_monthly",
-          accessToken: session?.access_token,
-        })
-        if (PaymentService.isAndroidNative()) {
-          setSubscriptionMessage("Abonnement VIP+ activé.")
-          router.refresh()
-        }
-        return
-      } catch (e) {
-        setSubscriptionMessage(e instanceof Error ? e.message : "Erreur abonnement VIP+.")
-        return
-      }
-    }
     try {
       const supabase = createClient()
       const {
         data: { session },
       } = await supabase.auth.getSession()
-      await PaymentService.subscribe({
-        plan: plan === "weekly" ? "weekly" : "monthly",
-        accessToken: session?.access_token,
-      })
-      if (PaymentService.isAndroidNative()) {
-        setSubscriptionMessage("Abonnement VIP activé.")
+      const accessToken = session?.access_token
+
+      if (billingViaGooglePlay) {
+        if (plan === "vip_plus_weekly" || plan === "vip_plus_monthly") {
+          await buyVIPPlus(accessToken, plan === "vip_plus_weekly" ? "weekly" : "monthly")
+          setSubscriptionMessage("Abonnement VIP+ activé.")
+        } else {
+          await buyVIP(accessToken, plan === "weekly" ? "weekly" : "monthly")
+          setSubscriptionMessage("Abonnement VIP activé.")
+        }
         router.refresh()
+        return
       }
+
+      await PaymentService.subscribe({
+        plan:
+          plan === "vip_plus_weekly"
+            ? "vip_plus_weekly"
+            : plan === "vip_plus_monthly"
+              ? "vip_plus_monthly"
+              : plan === "weekly"
+                ? "weekly"
+                : "monthly",
+        accessToken,
+      })
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Erreur abonnement."
-      // Sur Android, on évite d’afficher toute référence aux variables Stripe.
-      setSubscriptionMessage(
-        PaymentService.isAndroidNative() && msg.toLowerCase().includes("stripe")
-          ? "Erreur paiement. Réessaie plus tard."
-          : msg,
-      )
+      setSubscriptionMessage(msg)
     }
   }
 
@@ -571,6 +583,14 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
     }
     fetchMyParticipations()
   }, [user?.id, sessionLoading, sessionUserId])
+
+  const billingThroughGooglePlay = PaymentService.isAndroidNative()
+  const visibleSubscriptionMessage =
+    subscriptionMessage &&
+    billingThroughGooglePlay &&
+    /stripe/i.test(subscriptionMessage)
+      ? null
+      : subscriptionMessage
 
   return (
     <div className="flex flex-col gap-4 p-4 max-w-lg mx-auto">
@@ -703,23 +723,38 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
           <p className="text-xs text-foreground/60 mt-1">
             Bonus quotidien, roue de la fortune, jeu à gratter
           </p>
+          {billingThroughGooglePlay ? (
+            <p className="text-[11px] text-foreground/50 mt-2 leading-snug">
+              Produits Play&nbsp;: {GOOGLE_PLAY_VIP_WEEKLY_PRODUCT_ID}, {GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID}.
+            </p>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-2">
           <Button
             onClick={() => handleCheckout("weekly")}
             variant="outline"
             className="w-full border-yellow-600/50 hover:bg-yellow-600/10 text-yellow-300"
+            disabled={billingThroughGooglePlay && androidPricesLoading}
           >
             <Crown className="h-4 w-4 mr-2" /> VIP BKG (Hebdo) —{" "}
-            {androidPrices?.weekly ? `${androidPrices.weekly}/sem` : "1,99€/sem"}
+            {billingThroughGooglePlay && androidPricesLoading
+              ? "Chargement…"
+              : androidPrices?.weekly
+                ? `${androidPrices.weekly}/sem`
+                : "1,99€/sem"}
           </Button>
           <Button
             onClick={() => handleCheckout("monthly")}
             variant="outline"
             className="w-full border-yellow-600/50 hover:bg-yellow-600/10 text-yellow-300"
+            disabled={billingThroughGooglePlay && androidPricesLoading}
           >
             <Crown className="h-4 w-4 mr-2" /> VIP BKG (Mensuel) —{" "}
-            {androidPrices?.monthly ? `${androidPrices.monthly}/mois` : "4,99€/mois"}
+            {billingThroughGooglePlay && androidPricesLoading
+              ? "Chargement…"
+              : androidPrices?.monthly
+                ? `${androidPrices.monthly}/mois`
+                : "4,99€/mois"}
           </Button>
         </CardContent>
       </Card>
@@ -736,20 +771,51 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
           <p className="text-xs text-foreground/60 mt-1">
             Tous les avantages VIP + machine à sous exclusive + bonus doublé
           </p>
+          {billingThroughGooglePlay ? (
+            <p className="text-[11px] text-foreground/50 mt-2 leading-snug">
+              Produits Play&nbsp;: {GOOGLE_PLAY_VIP_PLUS_WEEKLY_PRODUCT_ID},{" "}
+              {GOOGLE_PLAY_VIP_PLUS_MONTHLY_PRODUCT_ID}.
+            </p>
+          ) : null}
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-2">
+          {(billingThroughGooglePlay || stripeVipPlusWeeklyConfigured) ? (
+            <Button
+              onClick={() => void handleCheckout("vip_plus_weekly")}
+              className="w-full bg-gradient-to-r from-slate-200 to-slate-400 text-slate-900 font-bold hover:from-slate-100 hover:to-slate-300"
+              disabled={billingThroughGooglePlay && androidPricesLoading}
+            >
+              <Star className="h-4 w-4 mr-2" /> BKG VIP+ (Hebdo) —{" "}
+              {billingThroughGooglePlay && androidPricesLoading
+                ? "Chargement…"
+                : androidPrices?.vipPlusWeekly
+                  ? `${androidPrices.vipPlusWeekly}/sem`
+                  : "—/sem"}
+            </Button>
+          ) : null}
           <Button
-            onClick={() => handleCheckout("vip_plus")}
+            onClick={() => void handleCheckout("vip_plus_monthly")}
             className="w-full bg-gradient-to-r from-slate-200 to-slate-400 text-slate-900 font-bold hover:from-slate-100 hover:to-slate-300"
+            disabled={billingThroughGooglePlay && androidPricesLoading}
           >
             <Star className="h-4 w-4 mr-2" /> BKG VIP+ (Mensuel) —{" "}
-            {androidPrices?.vipPlusMonthly ? `${androidPrices.vipPlusMonthly}/mois` : "7,99€/mois"}
+            {billingThroughGooglePlay && androidPricesLoading
+              ? "Chargement…"
+              : androidPrices?.vipPlusMonthly
+                ? `${androidPrices.vipPlusMonthly}/mois`
+                : "7,99€/mois"}
           </Button>
         </CardContent>
       </Card>
 
-      {subscriptionMessage && (
-        <p className="text-xs text-red-400 text-center">{subscriptionMessage}</p>
+      {visibleSubscriptionMessage && (
+        <p
+          className={`text-xs text-center ${
+            /\bactivé\b/i.test(visibleSubscriptionMessage) ? "text-green-400" : "text-red-400"
+          }`}
+        >
+          {visibleSubscriptionMessage}
+        </p>
       )}
 
       {/* ═══════════════════ BONUS QUOTIDIEN VIP ═══════════════════ */}
@@ -796,8 +862,8 @@ export function ProfileClient({ user, profile }: ProfileClientProps) {
         </Card>
       )}
 
-      {/* ═══════════════════ GESTION ABONNEMENT ═══════════════════ */}
-      {(isVip || isVipPlus) && (
+      {/* ═══════════════════ GESTION ABONNEMENT (Stripe uniquement Web) ═══════════════════ */}
+      {!billingThroughGooglePlay && (isVip || isVipPlus) && (
         <Button
           onClick={handleManageSubscription}
           variant="outline"
