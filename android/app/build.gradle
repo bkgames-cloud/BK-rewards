@@ -33,8 +33,10 @@ if (expoAutolinking.exists()) {
 }
 
 // On force le chemin de node ici pour corriger ProcessOutputValueSource
+// bundleInDebug : le JS est packagé dans l’APK même en debug (pas de Metro / 10.0.2.2:8081).
 project.ext.react = [
-    nodeExecutableAndArgs: ["/usr/local/bin/node"]
+    nodeExecutableAndArgs: ["/usr/local/bin/node"],
+    bundleInDebug: true,
 ]
 
 android {
