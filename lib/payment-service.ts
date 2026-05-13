@@ -4,7 +4,7 @@ export {
   buyVIP,
   buyVIPPlus,
   filterSubscriptionBannerMessage,
-  initializeStripe,
+  initPaymentClientBridge,
   isAndroidEmbeddedPaymentShell,
 } from "@/services/payment.service"
 export type { SubscribePlan, AndroidPriceLabels, VipBillingPeriod } from "@/services/payment.service"

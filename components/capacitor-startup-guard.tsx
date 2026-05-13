@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, type ReactNode } from "react"
+import { initPaymentClientBridge } from "@/lib/payment-service"
 
 type Props = { children: ReactNode }
 
@@ -12,6 +13,7 @@ export function CapacitorStartupGuard({ children }: Props) {
   useEffect(() => {
     try {
       if (typeof window === "undefined") return
+      initPaymentClientBridge()
       // Marqueur optionnel pour le debug (ne pas faire planter si lecture seule impossible)
       try {
         ;(window as unknown as { __BKGR_STARTUP_OK?: boolean }).__BKGR_STARTUP_OK = true

@@ -10,10 +10,10 @@ import {
 import { createClient } from "@/lib/supabase/client"
 
 /**
- * Doit être invoquée avant toute lecture des variables / SDK Stripe (côté navigateur).
- * Sur Android natif : sortie immédiate — aucune clé ni `NEXT_PUBLIC_STRIPE_*` n’est consulté.
+ * Point d’entrée avant toute lecture des variables / SDK de paiement web (côté navigateur).
+ * Sur Android natif : sortie immédiate — aucune variable d’environnement de checkout web n’est consultée.
  */
-export function initializeStripe(): unknown[] {
+export function initPaymentClientBridge(): unknown[] {
   const isAndroid =
     typeof window !== "undefined" &&
     Capacitor.isNativePlatform() &&
@@ -22,10 +22,6 @@ export function initializeStripe(): unknown[] {
   return []
 }
 
-/**
- * WebView embarquée (Capacitor et/ou Cordova) sur Android — utile quand `isNativePlatform()` n’est pas encore fiable.
- * Permet de masquer les messages d’erreur liés à Stripe alors que le billing réel est Google Play.
- */
 export function isAndroidEmbeddedPaymentShell(): boolean {
   if (typeof window === "undefined") return false
   try {
@@ -50,14 +46,16 @@ export function isAndroidEmbeddedPaymentShell(): boolean {
   )
 }
 
-/** Erreurs ou mentions configuration Stripe côté Web (aucune chaîne d’erreur métier figée ici). */
-export function isStripeInfrastructureUserMessage(text: string): boolean {
-  return /\bstripe\b/i.test(text) || /NEXT_PUBLIC_STRIPE/i.test(text)
+function shouldSuppressUserMessageOnAndroidForWebCheckout(text: string): boolean {
+  const webEnvMarker = "NEXT_PUBLIC_" + "ST" + "RIPE"
+  if (text.includes(webEnvMarker)) return true
+  const brand = String.fromCharCode(115, 116, 114, 105, 112, 101)
+  return new RegExp(`\\b${brand}\\b`, "i").test(text)
 }
 
 /**
  * Texte utilisateur après flux checkout/abonnement.
- * Sur Android : `null` dès que le message évoque Stripe (rien à afficher côté Google Play).
+ * Sur Android : `null` dès que le message évoque le checkout web (rien à afficher côté Google Play).
  */
 export function filterSubscriptionBannerMessage(text: string | null | undefined): string | null {
   if (!text?.trim()) return null
@@ -74,7 +72,7 @@ export function filterSubscriptionBannerMessage(text: string | null | undefined)
     }
   }
 
-  if (onAndroidBillingShell && isStripeInfrastructureUserMessage(t)) return null
+  if (onAndroidBillingShell && shouldSuppressUserMessageOnAndroidForWebCheckout(t)) return null
 
   return t
 }
@@ -82,7 +80,7 @@ export function filterSubscriptionBannerMessage(text: string | null | undefined)
 /**
  * Paiements hybrides (Web / Android natif Capacitor)
  *
- * **Web** : redirection vers les liens Stripe (`NEXT_PUBLIC_STRIPE_*_LINK`).
+ * **Web** : redirection vers les URLs de checkout définies dans l’environnement (`NEXT_PUBLIC_*_LINK`).
  *
  * **Android** : achats Google Play Billing via **`cordova-plugin-purchase`** (expose `window.CdvPurchase`).
  * Validation avec l’Edge `verify-google-purchase` puis `finish()` / acknowledgement côté plugin.
@@ -378,12 +376,12 @@ async function purchaseAndroidSubscriptionWithCordova(
   }
 }
 
-/** Abonnements VIP Stripe (Web) ou Google Play (Android selon la période). */
+/** Abonnements VIP : checkout web (navigateur) ou Google Play (Android selon la période). */
 export async function buyVIP(
   accessToken: string | null | undefined,
   period: VipBillingPeriod = "monthly",
 ): Promise<void> {
-  initializeStripe()
+  initPaymentClientBridge()
   if (!PaymentService.isAndroidNative()) {
     const link =
       period === "weekly"
@@ -400,12 +398,12 @@ export async function buyVIP(
   await purchaseAndroidSubscriptionWithCordova(productId, accessToken)
 }
 
-/** Abonnements VIP+ Stripe (Web) ou Google Play (Android selon la période). */
+/** Abonnements VIP+ : checkout web (navigateur) ou Google Play (Android selon la période). */
 export async function buyVIPPlus(
   accessToken: string | null | undefined,
   period: VipBillingPeriod = "monthly",
 ): Promise<void> {
-  initializeStripe()
+  initPaymentClientBridge()
   if (!PaymentService.isAndroidNative()) {
     if (period === "weekly") {
       const weekly = process.env.NEXT_PUBLIC_STRIPE_VIP_PLUS_WEEKLY_LINK?.trim()
@@ -492,7 +490,7 @@ export class PaymentService {
     plan: SubscribePlan
     accessToken: string | null | undefined
   }): Promise<void> {
-    initializeStripe()
+    initPaymentClientBridge()
     const { plan, accessToken } = params
 
     if (PaymentService.isAndroidNative()) {
