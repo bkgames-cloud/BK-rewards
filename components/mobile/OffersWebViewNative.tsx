@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from "react"
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, Alert } from "react-native"
 import { WebView } from "react-native-webview"
+import { OFFERWALL_MONLIX_COMING_SOON } from "@/lib/offerwall-ui"
+import { getMonlixOnSiteUrl } from "@/lib/monlix-urls"
 
 function safeUrlWithUserId(rawUrl: string, userId: string): string {
   const u = rawUrl.trim()
@@ -33,24 +35,33 @@ function isAllowedHost(hostname: string): boolean {
   // Lootably / Revlum (et sous-domaines)
   if (h === "lootably.com" || h.endsWith(".lootably.com")) return true
   if (h === "revlum.com" || h.endsWith(".revlum.com")) return true
-  // Autoriser pages internes de tracking si elles sont sur les mêmes domaines
+  // Monlix (autorisé uniquement si coming soon désactivé — pas chargé tant que désactivé)
+  if (h === "monlix.com" || h.endsWith(".monlix.com")) return true
   return false
 }
 
+type OfferTab = "lootably" | "revlum" | "monlix"
+
 export function OffersWebViewNative(props: { userId: string | null; onClose: () => void }) {
-  const [tab, setTab] = useState<"lootably" | "revlum">("lootably")
+  const [tab, setTab] = useState<OfferTab>("lootably")
   const [loading, setLoading] = useState(true)
 
   const lootablyBase = String(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_LOOTABLY_URL || "" : "").trim()
   const revlumBase = String(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_REVLUM_URL || "" : "").trim()
+  const monlixDisabled = OFFERWALL_MONLIX_COMING_SOON
 
   const canOpen = Boolean(props.userId && (lootablyBase || revlumBase))
 
   const url = useMemo(() => {
     if (!props.userId) return ""
+    if (tab === "monlix") {
+      // Ne jamais charger Monlix tant que désactivé (évite SDK / navigation native).
+      if (monlixDisabled) return ""
+      return safeUrlWithUserId(getMonlixOnSiteUrl(), props.userId)
+    }
     const base = tab === "lootably" ? lootablyBase : revlumBase
     return safeUrlWithUserId(base, props.userId)
-  }, [props.userId, tab, lootablyBase, revlumBase])
+  }, [props.userId, tab, lootablyBase, revlumBase, monlixDisabled])
 
   const onShouldStartLoadWithRequest = useCallback((req: any) => {
     const nextUrl = String(req?.url || "")
@@ -102,26 +113,52 @@ export function OffersWebViewNative(props: { userId: string | null; onClose: () 
         <Pressable onPress={() => setTab("revlum")} style={[styles.tab, tab === "revlum" && styles.tabActive]}>
           <Text style={[styles.tabTxt, tab === "revlum" && styles.tabTxtActive]}>Revlum</Text>
         </Pressable>
+        <View style={[styles.tab, styles.tabDisabled, monlixDisabled && styles.tabComingSoon]}>
+          <Pressable
+            disabled={monlixDisabled}
+            onPress={() => {
+              if (monlixDisabled) return
+              setTab("monlix")
+            }}
+            style={styles.tabPressable}
+          >
+            <Text style={[styles.tabTxt, styles.tabTxtDisabled, tab === "monlix" && styles.tabTxtActive]}>Monlix</Text>
+          </Pressable>
+          {monlixDisabled ? (
+            <View style={styles.badgeSoon} pointerEvents="none">
+              <Text style={styles.badgeSoonTxt}>Prochainement</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
-      <View style={styles.webviewWrap}>
-        {loading ? (
-          <View style={styles.loading}>
-            <ActivityIndicator size="small" color="#fafafa" />
-            <Text style={styles.loadingTxt}>Chargement…</Text>
-          </View>
-        ) : null}
-        <WebView
-          source={{ uri: url }}
-          onLoadStart={() => setLoading(true)}
-          onLoadEnd={() => setLoading(false)}
-          onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-          setSupportMultipleWindows={false}
-          javaScriptEnabled
-          domStorageEnabled
-          incognito
-        />
-      </View>
+      {tab === "monlix" && monlixDisabled ? (
+        <View style={styles.center}>
+          <Text style={styles.errTitle}>Monlix — Prochainement</Text>
+          <Text style={styles.errBody}>
+            Cette régie sera activée après validation. Lootably et Revlum restent disponibles.
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.webviewWrap}>
+          {loading ? (
+            <View style={styles.loading}>
+              <ActivityIndicator size="small" color="#fafafa" />
+              <Text style={styles.loadingTxt}>Chargement…</Text>
+            </View>
+          ) : null}
+          <WebView
+            source={{ uri: url }}
+            onLoadStart={() => setLoading(true)}
+            onLoadEnd={() => setLoading(false)}
+            onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
+            setSupportMultipleWindows={false}
+            javaScriptEnabled
+            domStorageEnabled
+            incognito
+          />
+        </View>
+      )}
     </View>
   )
 }
@@ -143,6 +180,7 @@ const styles = StyleSheet.create({
   backTxt: { color: "#d4af37", fontSize: 14, fontWeight: "700" },
   tabs: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -156,10 +194,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.14)",
     backgroundColor: "rgba(255,255,255,0.04)",
+    position: "relative",
   },
+  tabPressable: { flexDirection: "row", alignItems: "center" },
   tabActive: { borderColor: "rgba(212,175,55,0.55)", backgroundColor: "rgba(212,175,55,0.12)" },
+  tabDisabled: { opacity: 0.5 },
+  tabComingSoon: { overflow: "visible" },
   tabTxt: { color: "rgba(255,255,255,0.75)", fontWeight: "700", fontSize: 13 },
   tabTxtActive: { color: "#fafafa" },
+  tabTxtDisabled: { color: "rgba(255,255,255,0.55)" },
+  badgeSoon: {
+    position: "absolute",
+    top: -8,
+    right: -6,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(212,175,55,0.92)",
+  },
+  badgeSoonTxt: { color: "#111", fontSize: 9, fontWeight: "800" },
   webviewWrap: { flex: 1 },
   loading: {
     position: "absolute",
@@ -181,4 +234,3 @@ const styles = StyleSheet.create({
   errTitle: { color: "#fafafa", fontSize: 18, fontWeight: "800", marginBottom: 8 },
   errBody: { color: "rgba(255,255,255,0.75)", textAlign: "center" },
 })
-

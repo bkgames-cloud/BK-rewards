@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { countVideoViewsLastHour, isHourlyVideoQuotaExceeded } from "@/lib/video-quota"
-import { OFFERS_ENABLED } from "@/lib/offerwall-ui"
+import { OFFERS_ENABLED, OFFERWALL_MONLIX_COMING_SOON } from "@/lib/offerwall-ui"
 import { PaymentService, buyVIP, buyVIPPlus, isAndroidEmbeddedPaymentShell } from "@/lib/payment-service"
 import {
   GOOGLE_PLAY_VIP_MONTHLY_PRODUCT_ID,
@@ -728,6 +728,7 @@ export function DashboardClient({
 
   const isFirstVideoEver = (videoLifetimeCount ?? 0) === 0
   const offersUiDisabled = !OFFERS_ENABLED
+  const monlixComingSoon = OFFERWALL_MONLIX_COMING_SOON
   const isNativeApp = Boolean(isNativeAppProp)
   // Web: on supprime complètement le bloc "Regarder une Vidéo" (pas de mention AdMob/Android).
   const showVideoPointsCard = isNativeApp && (minimalHome || !isVip) && isAuthenticated
@@ -892,6 +893,31 @@ export function DashboardClient({
                     ? "Ouverture…"
                     : "Ouvrir les offres"}
               </Button>
+
+              {/* Monlix : code conservé, UI désactivée (pas de clic / pas d’appel natif). */}
+              <div
+                className={`relative mt-1 rounded-lg border border-border/40 bg-muted/20 px-3 py-2.5 ${monlixComingSoon ? "opacity-50" : ""}`}
+                aria-disabled={monlixComingSoon}
+              >
+                {monlixComingSoon ? (
+                  <span className="absolute right-2 top-2 rounded-full bg-[#D4AF37] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-black">
+                    Prochainement
+                  </span>
+                ) : null}
+                <p className="pr-24 text-sm font-semibold text-foreground">Monlix</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Offerwall partenaire — activation après validation.</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={monlixComingSoon}
+                  onClick={monlixComingSoon ? undefined : () => void handleOpenOffers()}
+                  className="mt-2 w-full disabled:pointer-events-none disabled:opacity-60"
+                  aria-label="Monlix — prochainement"
+                >
+                  {monlixComingSoon ? "Monlix — Prochainement" : "Ouvrir Monlix"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

@@ -13,7 +13,7 @@ import {
 } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import { createClient } from "@/lib/supabase/client"
-import { OFFERS_ENABLED } from "@/lib/offerwall-ui"
+import { OFFERS_ENABLED, OFFERWALL_MONLIX_COMING_SOON } from "@/lib/offerwall-ui"
 import { OffersWebViewNative } from "@/components/mobile/OffersWebViewNative"
 import { LegalNoticesNative } from "@/components/mobile/LegalNoticesNative"
 import { fetchAuthProfileForUser } from "@/lib/fetch-auth-profile"
@@ -241,6 +241,22 @@ export function DashboardHomeNative() {
               </View>
             ) : null}
           </View>
+
+          {/* Monlix : conservé, UI désactivée (pas de onPress / pas d’appel natif). */}
+          <View style={[styles.monlixCard, OFFERWALL_MONLIX_COMING_SOON && styles.disabled]}>
+            {OFFERWALL_MONLIX_COMING_SOON ? (
+              <View style={styles.monlixBadge} pointerEvents="none">
+                <Text style={styles.monlixBadgeTxt}>Prochainement</Text>
+              </View>
+            ) : null}
+            <Text style={styles.cardH3}>Monlix</Text>
+            <Text style={styles.cardMutedXs}>Offerwall partenaire — activation après validation.</Text>
+            <Pressable disabled={OFFERWALL_MONLIX_COMING_SOON} onPress={undefined}>
+              <View style={[styles.violetBtn, styles.disabledSoft]}>
+                <Text style={styles.violetBtnTxt}>Monlix — Prochainement</Text>
+              </View>
+            </Pressable>
+          </View>
         </View>
 
         {/* Emerald */}
@@ -436,6 +452,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
+  },
+  monlixCard: {
+    marginTop: 4,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    position: "relative",
+  },
+  monlixBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    backgroundColor: "#D4AF37",
+    zIndex: 2,
+  },
+  monlixBadgeTxt: {
+    color: "#111",
+    fontSize: 10,
+    fontWeight: "800",
   },
   gridCol: {
     gap: 12,

@@ -45,6 +45,10 @@ class MainApplication : Application(), ReactApplication {
       load()
     }
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
+
+    // Monlix SDK natif — désactivé jusqu’à validation (évite un crash au démarrage
+    // si la régie / le .so n’est pas présent ou non aligné 16 KB).
+    // MonlixSdk.initialize(this)
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {

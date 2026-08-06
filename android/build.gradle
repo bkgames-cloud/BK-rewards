@@ -8,7 +8,8 @@ buildscript {
         targetSdkVersion = 34
         // Expo SDK 51 / RN 0.74 fonctionne typiquement avec Kotlin 1.9.24
         kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.24'
-        ndkVersion = "26.1.10909125"
+        // NDK 27 : alignement 16 KB des libs natives (exigence Android 15+ / Play).
+        ndkVersion = "27.1.12297006"
     }
     repositories {
         google()
