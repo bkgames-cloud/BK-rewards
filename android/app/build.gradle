@@ -21,12 +21,12 @@ try {
 }
 
 // Expo Modules autolinking (ajoute les dépendances qui fournissent `expo.modules.*`)
-def expoAutolinking = file("../../node_modules/expo/scripts/autolinking.gradle")
-if (expoAutolinking.exists()) {
-    apply from: expoAutolinking
+def expoAutolinkingFromNodeModules = new File(rootProject.projectDir, "../node_modules/expo/scripts/autolinking.gradle")
+if (expoAutolinkingFromNodeModules.exists()) {
+    apply from: expoAutolinkingFromNodeModules
 } else {
     try {
-        apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle")
+        apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootProject.projectDir).text.trim(), "../scripts/autolinking.gradle")
     } catch (Throwable ignored) {
         // node_modules absent : sera résolu après npm/yarn install
     }
@@ -40,25 +40,28 @@ project.ext.react = [
 ]
 
 android {
-    ndkVersion "26.1.10909125"
-    compileSdkVersion 34
-    buildToolsVersion "34.0.0"
+    ndkVersion rootProject.ext.ndkVersion
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
     namespace "com.bk.rewards"
 
     buildFeatures {
         buildConfig = true
     }
 
-    packagingOptions {
+    packaging {
         jniLibs {
-            useLegacyPackaging = true
+            useLegacyPackaging = false
+        }
+        dex {
+            useLegacyPackaging = false
         }
     }
 
     defaultConfig {
         applicationId "com.bk.rewards"
-        minSdkVersion 23
-        targetSdkVersion 34
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
 

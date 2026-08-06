@@ -28,15 +28,15 @@ project(':react-native-iap').projectDir = new File(rootProject.projectDir, '../n
 includeBuild('../node_modules/@react-native/gradle-plugin')
 
 // Expo Modules autolinking (nécessaire pour expo.modules.* + PackageList)
-try {
-    apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle")
+def expoAutolinkingFromNodeModules = new File(rootProject.projectDir, "../node_modules/expo/scripts/autolinking.gradle")
+if (expoAutolinkingFromNodeModules.exists()) {
+    apply from: expoAutolinkingFromNodeModules
     useExpoModules()
-} catch (Throwable ignored) {
-    // Fallback demandé (certains templates mentionnent autolinking.rb)
+} else {
     try {
-        apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.rb")
+        apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle")
         useExpoModules()
-    } catch (Throwable ignored2) {
+    } catch (Throwable ignored) {
         // Expo non installé / node_modules absent : les scripts seront résolus après npm/yarn install.
     }
 }
