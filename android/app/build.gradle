@@ -2,47 +2,36 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
-// React Native community CLI autolinking (PackageList / native modules)
-apply from: new File(["node", "--print", "require.resolve('@react-native-community/cli-platform-android/package.json')"].execute(null, null).text.trim(), "../native_modules.gradle");
-applyNativeModulesAppBuildGradle(project)
+def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
-// React Native (react.gradle)
-try {
-    apply from: new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), "../react.gradle")
-} catch (Throwable ignored) {
-    // node_modules absent : sera résolu après npm/yarn install
+/**
+ * Configuration React Native / Expo SDK 53.
+ * bundleCommand export:embed : JS embarqué (pas de Metro au runtime).
+ */
+react {
+    entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"].execute(null, rootDir).text.trim())
+    reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
+    hermesCommand = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/sdks/hermesc/%OS-BIN%/hermesc"
+    codegenDir = new File(["node", "--print", "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
+
+    // Chemin Node explicite (Android Studio macOS ne récupère pas toujours PATH).
+    nodeExecutableAndArgs = [(System.getenv("NODE_BINARY") ?: (findProperty("NODE_BINARY") ?: "/usr/local/bin/node"))]
+
+    cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
+    bundleCommand = "export:embed"
+
+    /* Autolinking */
+    autolinkLibrariesWithApp()
 }
 
-// Expo (scripts Gradle)
-try {
-    apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/expo.gradle")
-} catch (Throwable ignored) {
-    // Certains templates n'ont pas expo.gradle ; l'autolinking via settings.gradle suffit.
-}
-
-// Expo Modules autolinking (ajoute les dépendances qui fournissent `expo.modules.*`)
-def expoAutolinkingFromNodeModules = new File(rootProject.projectDir, "../node_modules/expo/scripts/autolinking.gradle")
-if (expoAutolinkingFromNodeModules.exists()) {
-    apply from: expoAutolinkingFromNodeModules
-} else {
-    try {
-        apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootProject.projectDir).text.trim(), "../scripts/autolinking.gradle")
-    } catch (Throwable ignored) {
-        // node_modules absent : sera résolu après npm/yarn install
-    }
-}
-
-// On force le chemin de node ici pour corriger ProcessOutputValueSource
-// bundleInDebug : le JS est packagé dans l’APK même en debug (pas de Metro / 10.0.2.2:8081).
-project.ext.react = [
-    nodeExecutableAndArgs: ["/usr/local/bin/node"],
-    bundleInDebug: true,
-]
+def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInReleaseBuilds') ?: false).toBoolean()
+def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    ndkVersion rootProject.ext.ndkVersion
-    compileSdkVersion rootProject.ext.compileSdkVersion
+    // NDK 27 + packaging non-legacy : alignement ELF 16 KB (Android 15+ / Play Store).
+    ndkVersion "27.1.12297006"
     buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
     namespace "com.bk.rewards"
 
     buildFeatures {
@@ -51,9 +40,6 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = false
-        }
-        dex {
             useLegacyPackaging = false
         }
     }
@@ -76,41 +62,50 @@ android {
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
+
+    buildTypes {
+        release {
+            shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
+            minifyEnabled enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
 }
 
 // Apply static values from `gradle.properties` to the `android.packagingOptions`
-// Accepts values in comma delimited lists, example:
-// android.packagingOptions.pickFirsts=/LICENSE,**/picasa.ini
 ["pickFirsts", "excludes", "merges", "doNotStrip"].each { prop ->
-    // Split option: 'foo,bar' -> ['foo', 'bar']
     def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",");
-    // Trim all elements in place.
     for (i in 0..<options.size()) options[i] = options[i].trim();
-    // `[] - ""` is essentially `[""].filter(Boolean)` removing all empty strings.
     options -= ""
 
     if (options.length > 0) {
         println "android.packagingOptions.$prop += $options ($options.length)"
-        // Ex: android.packagingOptions.pickFirsts += '**/SCCS/**'
         options.each {
             android.packagingOptions[prop] += it
         }
     }
 }
 
-// JavaScriptCore (fallback si Hermes désactivé)
-def jscFlavor = 'org.webkit:android-jsc:+'
-
 dependencies {
-    // Le moteur de React Native
     implementation("com.facebook.react:react-android")
+
+    def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true"
+    def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true"
+    def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true"
+
+    if (isGifEnabled) {
+        implementation("com.facebook.fresco:animated-gif:${expoLibs.versions.fresco.get()}")
+    }
+    if (isWebpEnabled) {
+        implementation("com.facebook.fresco:webpsupport:${expoLibs.versions.fresco.get()}")
+        if (isWebpAnimatedEnabled) {
+            implementation("com.facebook.fresco:animated-webp:${expoLibs.versions.fresco.get()}")
+        }
+    }
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
     }
-
-    implementation project(':react-native-webview')
-    implementation project(':react-native-iap')
 }

@@ -2,29 +2,33 @@
 
 buildscript {
     ext {
-        buildToolsVersion = "34.0.0"
-        minSdkVersion = 23
-        compileSdkVersion = 34
-        targetSdkVersion = 34
-        // Expo SDK 51 / RN 0.74 fonctionne typiquement avec Kotlin 1.9.24
-        kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.24'
+        buildToolsVersion = findProperty('android.buildToolsVersion') ?: "35.0.0"
+        minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: "24")
+        compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: "35")
+        targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: "35")
         // NDK 27 : alignement 16 KB des libs natives (exigence Android 15+ / Play).
-        ndkVersion = "27.1.12297006"
+        ndkVersion = findProperty('android.ndkVersion') ?: "27.1.12297006"
+        kotlinVersion = findProperty('android.kotlinVersion') ?: "2.0.21"
     }
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle:8.3.2")
-        classpath('com.facebook.react:react-native-gradle-plugin')
+        // AGP ≥ 8.5.1 requis pour packaging 16 KB ; 8.7.2 minimum demandé.
+        classpath("com.android.tools.build:gradle:8.7.2")
+        classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
     }
 }
 
-apply plugin: "com.facebook.react.rootproject"
-
-def nodeBinary = System.getenv("NODE_BINARY") ?: (findProperty("NODE_BINARY") ?: "node")
+def reactNativeAndroidDir = new File(
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("node", "--print", "require.resolve('react-native/package.json')")
+    }.standardOutput.asText.get().trim(),
+    "../android"
+)
 
 allprojects {
     configurations.all {
@@ -37,15 +41,13 @@ allprojects {
     repositories {
         maven {
             // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-            url(new File([nodeBinary, '--print', "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), '../android'))
+            url(reactNativeAndroidDir)
         }
-        maven {
-            // Android JSC is installed from npm
-            url(new File([nodeBinary, '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), '../dist'))
-        }
-
         google()
         mavenCentral()
         maven { url 'https://www.jitpack.io' }
     }
 }
+
+apply plugin: "expo-root-project"
+apply plugin: "com.facebook.react.rootproject"
